@@ -1,0 +1,364 @@
+<!DOCTYPE html>
+<html xmlns:th="http://www.thymeleaf.org">
+<head>
+  <meta charset="UTF-8"/>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      font-family: Arial, sans-serif;
+      font-size: 12px;
+      color: #333;
+      padding: 30px;
+    }
+
+    .header {
+      display: flex;
+      justify-content: space-between;
+      margin-bottom: 30px;
+      border-bottom: 3px solid #1a5276;
+      padding-bottom: 20px;
+    }
+
+    .company-name {
+      font-size: 22px;
+      font-weight: bold;
+      color: #1a5276;
+    }
+
+    .company-details {
+      font-size: 11px;
+      color: #666;
+      margin-top: 5px;
+    }
+
+    .invoice-title {
+      text-align: right;
+    }
+
+    .invoice-title h1 {
+      font-size: 28px;
+      color: #1a5276;
+      letter-spacing: 3px;
+    }
+
+    .invoice-title .invoice-number {
+      font-size: 14px;
+      font-weight: bold;
+      margin-top: 5px;
+    }
+
+    .invoice-title .invoice-date {
+      font-size: 11px;
+      color: #666;
+    }
+
+    .bill-to-section {
+      display: flex;
+      justify-content: space-between;
+      margin-bottom: 25px;
+    }
+
+    .bill-to h3 {
+      color: #1a5276;
+      font-size: 11px;
+      text-transform: uppercase;
+      letter-spacing: 1px;
+      margin-bottom: 8px;
+    }
+
+    .bill-to p {
+      font-size: 12px;
+      line-height: 1.6;
+    }
+
+    .project-info {
+      background: #f4f6f7;
+      padding: 12px 15px;
+      border-radius: 4px;
+      margin-bottom: 20px;
+    }
+
+    .project-info p {
+      font-size: 11px;
+      color: #555;
+    }
+
+    .project-info strong {
+      color: #1a5276;
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      margin-bottom: 20px;
+    }
+
+    thead th {
+      background: #1a5276;
+      color: white;
+      padding: 10px 12px;
+      text-align: left;
+      font-size: 11px;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+    }
+
+    thead th:last-child,
+    thead th:nth-last-child(2) {
+      text-align: right;
+    }
+
+    tbody td {
+      padding: 10px 12px;
+      border-bottom: 1px solid #e8e8e8;
+      font-size: 12px;
+    }
+
+    tbody td:last-child,
+    tbody td:nth-last-child(2) {
+      text-align: right;
+    }
+
+    tbody tr:nth-child(even) td {
+      background: #fafafa;
+    }
+
+    .totals-section {
+      display: flex;
+      justify-content: flex-end;
+      margin-bottom: 25px;
+    }
+
+    .totals-table {
+      width: 280px;
+    }
+
+    .totals-table td {
+      padding: 6px 12px;
+      font-size: 12px;
+    }
+
+    .totals-table td:last-child {
+      text-align: right;
+      font-weight: bold;
+    }
+
+    .total-row td {
+      background: #1a5276;
+      color: white;
+      font-size: 14px;
+      padding: 10px 12px;
+    }
+
+    .outstanding-row td {
+      background: #e8f4f8;
+      color: #1a5276;
+      font-size: 13px;
+      font-weight: bold;
+      padding: 8px 12px;
+    }
+
+    .payment-info {
+      background: #eafaf1;
+      border-left: 4px solid #27ae60;
+      padding: 12px 15px;
+      margin-bottom: 20px;
+      font-size: 11px;
+    }
+
+    .payment-info h4 {
+      color: #27ae60;
+      margin-bottom: 6px;
+    }
+
+    .notes-section {
+      margin-bottom: 20px;
+      font-size: 11px;
+      color: #555;
+    }
+
+    .notes-section h4 {
+      color: #333;
+      margin-bottom: 5px;
+    }
+
+    .terms-section {
+      border-top: 1px solid #e8e8e8;
+      padding-top: 15px;
+      font-size: 10px;
+      color: #888;
+    }
+
+    .footer {
+      margin-top: 30px;
+      text-align: center;
+      font-size: 10px;
+      color: #aaa;
+      border-top: 1px solid #e8e8e8;
+      padding-top: 15px;
+    }
+
+    .status-badge {
+      display: inline-block;
+      padding: 3px 10px;
+      border-radius: 12px;
+      font-size: 10px;
+      font-weight: bold;
+      text-transform: uppercase;
+      background: #d4efdf;
+      color: #196f3d;
+    }
+  </style>
+</head>
+<body>
+
+<!-- ═══════════════════════════ HEADER ═══════════════════════ -->
+<div class="header">
+  <div class="company-info">
+    <div class="company-name"
+         th:text="${companyName}">
+      The WizeVision Company
+    </div>
+    <div class="company-details">
+      <span th:text="${companyAddress}"></span><br/>
+      <span th:text="${companyEmail}"></span> |
+      <span th:text="${companyPhone}"></span><br/>
+      GST: <span th:text="${companyGst}"></span>
+    </div>
+  </div>
+  <div class="invoice-title">
+    <h1>INVOICE</h1>
+    <div class="invoice-number"
+         th:text="${invoiceNumber}">
+      INV-2026-001
+    </div>
+    <div class="invoice-date">
+      Date: <span th:text="${invoiceDate}"></span>
+    </div>
+    <div class="invoice-date">
+      Due: <span th:text="${dueDate}"></span>
+    </div>
+    <div style="margin-top: 5px;">
+            <span class="status-badge"
+                  th:text="${status}">
+                Sent
+            </span>
+    </div>
+  </div>
+</div>
+
+<!-- ═══════════════════════════ BILL TO ══════════════════════ -->
+<div class="bill-to-section">
+  <div class="bill-to">
+    <h3>Bill To</h3>
+    <p>
+      <strong th:text="${clientName}">Client Name</strong>
+      <br/>
+      <span th:text="${clientAddress}">Address</span>
+      <br/>
+      <span th:if="${clientGst != null
+                           and clientGst != ''}">
+                GST: <span th:text="${clientGst}"></span>
+            </span>
+    </p>
+    <p style="margin-top: 8px;"
+       th:if="${contactName != null
+                   and contactName != ''}">
+      Attn:
+      <strong th:text="${contactName}"></strong><br/>
+      <span th:text="${contactEmail}"></span>
+    </p>
+  </div>
+
+  <div class="project-info" style="width: 250px;">
+    <p>
+      <strong>Project:</strong><br/>
+      <span th:text="${projectNumber}"></span> —
+      <span th:text="${projectName}"></span>
+    </p>
+  </div>
+</div>
+
+<!-- ═══════════════════════════ LINE ITEMS ═══════════════════ -->
+<table>
+  <thead>
+  <tr>
+    <th style="width: 50%">Description</th>
+    <th style="width: 10%">Qty</th>
+    <th style="width: 15%">Unit</th>
+    <th style="width: 25%">Amount (₹)</th>
+  </tr>
+  </thead>
+  <tbody>
+  <!--
+    lineItems is a JSON string from the database.
+    The template renders it as-is for now.
+    When you share your Thymeleaf template,
+    we will wire up proper line item iteration.
+    For now this placeholder shows the structure.
+  -->
+  <tr>
+    <td colspan="4"
+        style="color: #888; font-style: italic;"
+        th:text="${lineItems}">
+      Line items will appear here
+    </td>
+  </tr>
+  </tbody>
+</table>
+
+<!-- ═══════════════════════════ TOTALS ═══════════════════════ -->
+<div class="totals-section">
+  <table class="totals-table">
+    <tr>
+      <td>Subtotal</td>
+      <td>₹ <span th:text="${subtotal}"></span></td>
+    </tr>
+    <tr>
+      <td>Tax
+        (<span th:text="${taxPercentage}"></span>%)
+      </td>
+      <td>₹ <span th:text="${taxAmount}"></span></td>
+    </tr>
+    <tr class="total-row">
+      <td>Total Amount</td>
+      <td>₹ <span th:text="${totalAmount}"></span></td>
+    </tr>
+    <tr>
+      <td>Amount Paid</td>
+      <td>₹ <span th:text="${amountPaid}"></span></td>
+    </tr>
+    <tr class="outstanding-row">
+      <td>Outstanding</td>
+      <td>₹ <span th:text="${outstandingAmount}"></span>
+      </td>
+    </tr>
+  </table>
+</div>
+
+<!-- ═══════════════════════════ NOTES ════════════════════════ -->
+<div class="notes-section"
+     th:if="${notes != null and notes != ''}">
+  <h4>Notes</h4>
+  <p th:text="${notes}"></p>
+</div>
+
+<!-- ═══════════════════════════ TERMS ════════════════════════ -->
+<div class="terms-section"
+     th:if="${termsAndConditions != null
+              and termsAndConditions != ''}">
+  <strong>Terms & Conditions</strong>
+  <p th:text="${termsAndConditions}"></p>
+</div>
+
+<!-- ═══════════════════════════ FOOTER ═══════════════════════ -->
+<div class="footer">
+  <p>
+    Thank you for your business. |
+    <span th:text="${companyName}"></span> |
+    <span th:text="${companyEmail}"></span>
+  </p>
+</div>
+
+</body>
+</html>

@@ -1,0 +1,160 @@
+# ================================================================
+# WIZECOMPANY PORTAL — BASE CONFIGURATION
+# ================================================================
+# This file contains settings that apply to ALL environments.
+# Environment-specific overrides go in:
+#   application-dev.yml   (local development)
+#   application-prod.yml  (production server)
+#
+# Sensitive values like passwords and secrets are NEVER hardcoded
+# here. They come from environment variables using ${VAR_NAME}
+# syntax. This is non-negotiable for production security.
+# ================================================================
+
+spring:
+  application:
+    name: wizevision
+
+  # ── PROFILE ACTIVATION ─────────────────────────────────────
+  # Default to dev. Production deployment sets:
+  # SPRING_PROFILES_ACTIVE=prod
+  profiles:
+    active: ${SPRING_PROFILES_ACTIVE:dev}
+
+  # ── JPA / HIBERNATE ────────────────────────────────────────
+  jpa:
+    # NEVER use create or create-drop in production.
+    # validate = Hibernate checks schema matches entities
+    #            but does NOT change anything.
+    #            Flyway manages schema changes, not Hibernate.
+    hibernate:
+      ddl-auto: validate
+    properties:
+      hibernate:
+        # Matches PostgreSQL dialect for proper SQL generation
+        dialect: org.hibernate.dialect.PostgreSQLDialect
+        # Batches INSERT/UPDATE statements for performance
+        jdbc:
+          batch_size: 25
+        order_inserts: true
+        order_updates: true
+        # Formats SQL in logs when show-sql is true
+        format_sql: true
+    # CRITICAL: Must be false in production.
+    # open-in-view keeps database connection open for entire
+    # HTTP request including view rendering — wastes connections.
+    open-in-view: false
+
+  # ── FLYWAY ─────────────────────────────────────────────────
+  flyway:
+    enabled: true
+    locations: classpath:db/migration
+    baseline-on-migrate: true
+    validate-on-migrate: true
+    # Table name for Flyway's migration tracking
+    table: flyway_schema_history
+
+  # ── JACKSON (JSON) ─────────────────────────────────────────
+  jackson:
+    # Sends dates as "2025-01-15T10:30:00Z" not as a number
+    serialization:
+      write-dates-as-timestamps: false
+    # Prevents errors when frontend sends extra fields
+    deserialization:
+      fail-on-unknown-properties: false
+    # Matches our @JsonInclude on ApiResponse
+    default-property-inclusion: non_null
+    time-zone: UTC
+
+  # ── CACHE ──────────────────────────────────────────────────
+  cache:
+    type: redis
+
+# ── SERVER ───────────────────────────────────────────────────
+server:
+  error:
+    whitelabel:
+      enabled: false
+  port: ${SERVER_PORT:8080}
+  servlet:
+    context-path: /
+  # Compresses responses over 2KB — reduces bandwidth
+  compression:
+    enabled: true
+    min-response-size: 2048
+    mime-types:
+      - application/json
+      - text/plain
+  # Graceful shutdown — finishes in-flight requests
+  # before stopping. Critical for zero-downtime deploys.
+  shutdown: graceful
+  tomcat:
+    # How long to wait for in-flight requests on shutdown
+    connection-timeout: 20s
+
+# ── ACTUATOR (Health + Metrics) ──────────────────────────────
+management:
+  endpoints:
+    web:
+      exposure:
+        # health and info are public
+        # prometheus is for monitoring (secured separately)
+        # others are admin-only
+        include: health,info,metrics,prometheus
+      base-path: /actuator
+  endpoint:
+    health:
+      # Shows component details only to authorized users
+      show-details: when-authorized
+      show-components: when-authorized
+  # Tags every metric with app name for Grafana filtering
+  metrics:
+    tags:
+      application: ${spring.application.name}
+  # Graceful shutdown timeout
+  server:
+    shutdown-timeout: 30s
+
+# ── SPRINGDOC (Swagger UI) ───────────────────────────────────
+springdoc:
+  api-docs:
+    path: /v3/api-docs
+  swagger-ui:
+    path: /swagger-ui.html
+    # Groups operations by tag in the UI
+    tags-sorter: alpha
+    operations-sorter: method
+    # Persists auth token in Swagger between page refreshes
+    persist-authorization: true
+  # Shows actuator endpoints in Swagger (useful for dev)
+  show-actuator: false
+
+# ── APPLICATION CUSTOM PROPERTIES ────────────────────────────
+# Type-safe binding via @ConfigurationProperties classes
+app:
+  security:
+    jwt:
+      # Secrets come from environment variables only
+      # Never hardcode secrets here
+      access-token-secret: ${JWT_ACCESS_SECRET}
+      refresh-token-secret: ${JWT_REFRESH_SECRET}
+      # 15 minutes in milliseconds
+      access-token-expiry-ms: ${JWT_ACCESS_EXPIRY_MS:900000}
+      # 7 days in milliseconds
+      refresh-token-expiry-ms: ${JWT_REFRESH_EXPIRY_MS:604800000}
+    cors:
+      allowed-origins: ${CORS_ALLOWED_ORIGINS:http://localhost:3000,http://localhost:5173}
+    rate-limit:
+      # Requests per minute per IP
+      requests-per-minute: ${RATE_LIMIT_RPM:60}
+      # Max login attempts before lockout
+      max-login-attempts: ${MAX_LOGIN_ATTEMPTS:5}
+      # Max pin login attempts before lockout
+      pin-login-attempts-per-minute: ${MAX_PIN_LOGIN_ATTEMPTS:10}
+      # Secure Key for Windows attendance application connection
+    windows-app:
+      api-key: ${WINDOWS_APP_KEY:dev-windows-app-secret-key-change-in-prod}
+  ai:
+    anthropic:
+      api-key: ${ANTHROPIC_API_KEY:}
+      model: claude-sonnet-4-20250514

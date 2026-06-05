@@ -1,0 +1,50 @@
+# ================================================================
+# THEWIZECOMPANY PORTAL — LOCAL DEVELOPMENT INFRASTRUCTURE
+# ================================================================
+# Starts PostgreSQL and Redis locally for development.
+# Run with: docker compose up -d
+# Stop with: docker compose down
+# ================================================================
+
+version: '3.9'
+
+services:
+
+  # ── POSTGRESQL ───────────────────────────────────────────────
+  postgres:
+    image: postgres:16-alpine
+    container_name: wizevision-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${DB_NAME}
+      POSTGRES_USER: ${DB_USERNAME}
+      POSTGRES_PASSWORD: ${DB_PASSWORD}
+    ports:
+      - "5432:5432"
+    volumes:
+      # Data persists between docker compose down/up
+      - wizevision_postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # ── REDIS ────────────────────────────────────────────────────
+  redis:
+    image: redis:7-alpine
+    container_name: wizevision-redis
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    volumes:
+      - wizevision_redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  wizevision_postgres_data:
+  wizevision_redis_data:
