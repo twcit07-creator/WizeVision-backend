@@ -20,9 +20,11 @@ import com.thewizecompany.wizevision.projects.dto.UpdateProjectProgressRequest;
 import com.thewizecompany.wizevision.projects.repository.ChangeOrderRepository;
 import com.thewizecompany.wizevision.projects.repository.ProjectAssignmentRepository;
 import com.thewizecompany.wizevision.projects.repository.ProjectRepository;
+import com.thewizecompany.wizevision.shared.domain.SequenceType;
 import com.thewizecompany.wizevision.shared.exception.BusinessException;
 import com.thewizecompany.wizevision.shared.exception.ResourceNotFoundException;
 import com.thewizecompany.wizevision.shared.responses.PageResponse;
+import com.thewizecompany.wizevision.shared.service.SequenceService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.domain.Page;
@@ -48,6 +50,7 @@ public class ProjectService {
     private final ClientContactRepository contactRepository;
     private final EmployeeRepository employeeRepository;
     private final ProjectInquiryRepository inquiryRepository;
+    private final SequenceService sequenceService;
 
     // ─────────────────────────────────────────────────────────
     // CREATE PROJECT FROM ACCEPTED BID
@@ -734,9 +737,11 @@ public class ProjectService {
 
     private String generateProjectNumber() {
         int year = Year.now().getValue();
-        long count = projectRepository.countByIsDeletedFalse();
-        return "J-TWC-" + year + "-"
-                + String.format("%03d", count + 1);
+        Integer sequence = sequenceService.nextSequence(
+                SequenceType.PROJECT,
+                year
+        );
+        return String.format("J-TWC-%d-%03d", year, sequence);
     }
 
     private String getEmployeeName(UUID employeeId) {
@@ -747,7 +752,8 @@ public class ProjectService {
                 .orElse(null);
     }
 
-    private ProjectResponse mapToResponse(Project project, boolean includeFinancials) {
+    private ProjectResponse mapToResponse(Project project, boolean showFinancials) {
+
         var client = clientRepository
                 .findByIdAndIsDeletedFalse(project.getClientId())
                 .orElse(null);
@@ -767,6 +773,51 @@ public class ProjectService {
                         project.getId()
                 );
 
+        /*
+         * Load current active team members from
+         * project_assignments table.
+         * Only members who have not been removed
+         * (removedAt is null).
+         */
+        List<ProjectResponse.TeamMemberResponse> team =
+                assignmentRepository
+                        .findByProjectIdAndRemovedAtIsNullAndIsDeletedFalse(
+                                project.getId()
+                        )
+                        .stream()
+                        .map(assignment -> {
+                            var employee = employeeRepository
+                                    .findByIdAndIsDeletedFalse(
+                                            assignment.getEmployeeId()
+                                    )
+                                    .orElse(null);
+
+                            return ProjectResponse.TeamMemberResponse
+                                    .builder()
+                                    .employeeId(assignment.getEmployeeId())
+                                    .employeeCode(employee != null
+                                            ? employee.getEmployeeCode() : null)
+                                    .fullName(employee != null
+                                            ? employee.getFullName() : null)
+                                    .role(
+                                            assignment.getRoleInProject().name()
+                                    )
+                                    .roleDisplay(
+                                            assignment.getRoleInProject()
+                                                    .getDisplayName()
+                                    )
+                                    .assignedAt(assignment.getAssignedAt())
+                                    .assignedBy(assignment.getAssignedBy())
+                                    .build();
+                        })
+                        .toList();
+
+        /*
+         * Team is considered assigned when at least one
+         * active MODELER, EDITOR, and CHECKER are present.
+         */
+        boolean teamAssigned = hasMinimumTeam(project.getId());
+
         return ProjectResponse.builder()
                 .id(project.getId())
                 .projectNumber(project.getProjectNumber())
@@ -783,30 +834,12 @@ public class ProjectService {
                 .scopeOfWork(project.getScopeOfWork())
                 .inclusions(project.getInclusions())
                 .exclusions(project.getExclusions())
-                .contractAmount(
-                        includeFinancials
-                                ? project.getContractAmount() : null
-                )
-                .changeOrdersTotal(
-                        includeFinancials
-                                ? project.getChangeOrdersTotal() : null
-                )
-                .totalContractValue(
-                        includeFinancials
-                                ? project.getTotalContractValue() : null
-                )
-                .totalInvoiced(
-                        includeFinancials
-                                ? project.getTotalInvoiced() : null
-                )
-                .totalPaid(
-                        includeFinancials
-                                ? project.getTotalPaid() : null
-                )
-                .outstandingAmount(
-                        includeFinancials
-                                ? project.getOutstandingAmount() : null
-                )
+                .contractAmount(project.getContractAmount())
+                .changeOrdersTotal(project.getChangeOrdersTotal())
+                .totalContractValue(project.getTotalContractValue())
+                .totalInvoiced(project.getTotalInvoiced())
+                .totalPaid(project.getTotalPaid())
+                .outstandingAmount(project.getOutstandingAmount())
                 .status(project.getStatus())
                 .statusDisplay(project.getStatus().getDisplayName())
                 .currentPhase(project.getCurrentPhase())
@@ -816,6 +849,8 @@ public class ProjectService {
                 .progressPercentage(project.getProgressPercentage())
                 .pmId(project.getPmId())
                 .pmName(getEmployeeName(project.getPmId()))
+                .team(team)                    // ← replaces the 3 fields
+                .teamAssigned(teamAssigned)
                 .estimatedStartDate(project.getEstimatedStartDate())
                 .estimatedEndDate(project.getEstimatedEndDate())
                 .actualStartDate(project.getActualStartDate())

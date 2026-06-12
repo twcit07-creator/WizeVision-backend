@@ -277,4 +277,6 @@ public class Invoice extends BaseEntity {
         }
         this.totalAmount = subtotal.add(taxAmount);
     }
+
+
 }

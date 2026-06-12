@@ -9,6 +9,7 @@ import lombok.*;
 import java.math.BigDecimal;
 import java.time.Instant;
 import java.time.LocalDate;
+import java.util.List;
 import java.util.UUID;
 
 
@@ -54,12 +55,7 @@ public class ProjectResponse {
 
     private final UUID pmId;
     private final String pmName;
-    private final UUID modelerId;
-    private final String modelerName;
-    private final UUID editorId;
-    private final String editorName;
-    private final UUID checkerId;
-    private final String checkerName;
+    private final List<TeamMemberResponse> team;
     private final boolean teamAssigned;
 
     private final LocalDate estimatedStartDate;
@@ -75,4 +71,16 @@ public class ProjectResponse {
     private final long changeOrdersCount;
     private final Instant createdAt;
     private final String createdBy;
+
+    @Getter
+    @Builder
+    public static class TeamMemberResponse {
+        private final UUID employeeId;
+        private final String employeeCode;
+        private final String fullName;
+        private final String role;
+        private final String roleDisplay;
+        private final Instant assignedAt;
+        private final String assignedBy;
+    }
 }

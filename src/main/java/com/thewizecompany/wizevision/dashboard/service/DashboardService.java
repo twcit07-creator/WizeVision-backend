@@ -3,6 +3,7 @@ package com.thewizecompany.wizevision.dashboard.service;
 import com.thewizecompany.wizevision.attendance.repository.AttendanceRepository;
 import com.thewizecompany.wizevision.bidding.domain.BidStatus;
 import com.thewizecompany.wizevision.bidding.repository.BidRepository;
+import com.thewizecompany.wizevision.client.domain.Client;
 import com.thewizecompany.wizevision.client.repository.ClientRepository;
 import com.thewizecompany.wizevision.dashboard.dto.AdminDashboardResponse;
 import com.thewizecompany.wizevision.dashboard.dto.FinanceDashboardResponse;
@@ -13,7 +14,9 @@ import com.thewizecompany.wizevision.employee.repository.EmployeeRepository;
 import com.thewizecompany.wizevision.hr.domain.LeaveStatus;
 import com.thewizecompany.wizevision.hr.repository.LeaveApplicationRepository;
 import com.thewizecompany.wizevision.hr.repository.PayrollRunRepository;
+import com.thewizecompany.wizevision.invoicing.domain.Invoice;
 import com.thewizecompany.wizevision.invoicing.domain.InvoiceStatus;
+import com.thewizecompany.wizevision.invoicing.domain.Payment;
 import com.thewizecompany.wizevision.invoicing.repository.InvoiceRepository;
 import com.thewizecompany.wizevision.invoicing.repository.PaymentRepository;
 import com.thewizecompany.wizevision.marketing.domain.InquiryStatus;
@@ -27,8 +30,6 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
 import java.time.LocalDate;
-import java.time.YearMonth;
-import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
@@ -158,7 +159,7 @@ public class DashboardService {
                         && i.getStatus() != InvoiceStatus.CANCELLED
                         && !i.getInvoiceDate().isBefore(monthStart)
                 )
-                .map(i -> i.getTotalAmount())
+                .map(Invoice::getTotalAmount)
                 .reduce(BigDecimal.ZERO, BigDecimal::add);
 
         BigDecimal revenueLastMonth = invoiceRepository
@@ -169,14 +170,14 @@ public class DashboardService {
                         && !i.getInvoiceDate().isBefore(lastMonthStart)
                         && !i.getInvoiceDate().isAfter(lastMonthEnd)
                 )
-                .map(i -> i.getTotalAmount())
+                .map(Invoice::getTotalAmount)
                 .reduce(BigDecimal.ZERO, BigDecimal::add);
 
         var overdueInvoices = invoiceRepository
                 .findOverdueInvoices(today);
         long overdueCount = overdueInvoices.size();
         BigDecimal overdueAmount = overdueInvoices.stream()
-                .map(i -> i.getOutstandingAmount())
+                .map(Invoice::getOutstandingAmount)
                 .reduce(BigDecimal.ZERO, BigDecimal::add);
 
         /*
@@ -211,7 +212,7 @@ public class DashboardService {
                 .overdueInvoicesCount(overdueCount)
                 .overdueInvoicesAmount(overdueAmount)
                 .leaveApplicationsPendingHr(pendingHrLeaves)
-                .recentActivity(List.of())
+                .recentActivity(List.of())  //TODO: Add logs here
                 .build();
     }
 
@@ -271,7 +272,7 @@ public class DashboardService {
                             .findByIdAndIsDeletedFalse(
                                     p.getClientId()
                             )
-                            .map(c -> c.getCompanyName())
+                            .map(Client::getCompanyName)
                             .orElse(null);
 
                     return PmDashboardResponse
@@ -306,7 +307,7 @@ public class DashboardService {
                               .findByIdAndIsDeletedFalse(
                                       inq.getClientId()
                               )
-                              .map(c -> c.getCompanyName())
+                              .map(Client::getCompanyName)
                               .orElse(null)
                             : null;
 
@@ -469,11 +470,11 @@ public class DashboardService {
                 .toList();
 
         BigDecimal totalInvoiced = allInvoices.stream()
-                .map(i -> i.getTotalAmount())
+                .map(Invoice::getTotalAmount)
                 .reduce(BigDecimal.ZERO, BigDecimal::add);
 
         BigDecimal totalCollected = allInvoices.stream()
-                .map(i -> i.getAmountPaid())
+                .map(Invoice::getAmountPaid)
                 .reduce(BigDecimal.ZERO, BigDecimal::add);
 
         BigDecimal totalOutstanding = totalInvoiced
@@ -483,7 +484,7 @@ public class DashboardService {
                 .filter(i ->
                         !i.getInvoiceDate().isBefore(monthStart)
                 )
-                .map(i -> i.getTotalAmount())
+                .map(Invoice::getTotalAmount)
                 .reduce(BigDecimal.ZERO, BigDecimal::add);
 
         BigDecimal collectedThisMonth = paymentRepository
@@ -492,14 +493,14 @@ public class DashboardService {
                 .filter(p -> !p.isDeleted()
                         && !p.getPaymentDate().isBefore(monthStart)
                 )
-                .map(p -> p.getAmount())
+                .map(Payment::getAmount)
                 .reduce(BigDecimal.ZERO, BigDecimal::add);
 
         var overdueInvoices =
                 invoiceRepository.findOverdueInvoices(today);
         long overdueCount = overdueInvoices.size();
         BigDecimal overdueAmount = overdueInvoices.stream()
-                .map(i -> i.getOutstandingAmount())
+                .map(Invoice::getOutstandingAmount)
                 .reduce(BigDecimal.ZERO, BigDecimal::add);
 
         long draftCount = allInvoices.stream()
@@ -559,10 +560,10 @@ public class DashboardService {
                         .filter(i -> i.getOutstandingAmount()
                                 .compareTo(BigDecimal.ZERO) > 0)
                         .collect(Collectors.groupingBy(
-                                i -> i.getClientId(),
+                                Invoice::getClientId,
                                 Collectors.reducing(
                                         BigDecimal.ZERO,
-                                        i -> i.getOutstandingAmount(),
+                                        Invoice::getOutstandingAmount,
                                         BigDecimal::add
                                 )
                         ));

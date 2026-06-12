@@ -1,11 +1,6 @@
 package com.thewizecompany.wizevision.shared.domain;
 
-import jakarta.persistence.Column;
-import jakarta.persistence.EntityListeners;
-import jakarta.persistence.GeneratedValue;
-import jakarta.persistence.GenerationType;
-import jakarta.persistence.Id;
-import jakarta.persistence.MappedSuperclass;
+import jakarta.persistence.*;
 import lombok.Getter;
 import lombok.Setter;
 import org.springframework.data.annotation.CreatedBy;
@@ -134,7 +129,7 @@ public abstract class BaseEntity {
      *
      * This is critical for bid amounts, invoice totals, etc.
      */
-    @jakarta.persistence.Version
+    @Version
     @Column(name = "version", nullable = false)
     private Long version = 0L;
 

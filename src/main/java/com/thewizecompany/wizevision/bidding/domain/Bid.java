@@ -73,7 +73,7 @@ public class Bid extends BaseEntity {
     @Column(name = "inquiry_id")
     private UUID inquiryId;
 
-    @Column(name = "client_id", nullable = false)
+    @Column(name = "client_id")
     private UUID clientId;
 
     @Column(name = "client_contact_id")

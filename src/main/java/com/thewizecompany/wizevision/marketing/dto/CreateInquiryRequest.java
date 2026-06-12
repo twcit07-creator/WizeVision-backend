@@ -8,9 +8,40 @@ import lombok.Setter;
 import java.util.List;
 import java.util.UUID;
 
+/*
+ * CREATE INQUIRY REQUEST
+ *
+ * Used in two scenarios:
+ *
+ * SCENARIO A — From a lead (prospect):
+ *   leadId    = the lead UUID
+ *   clientId  = null (company is not yet a client)
+ *
+ * SCENARIO B — Direct from existing client:
+ *   clientId  = the client UUID
+ *   leadId    = null (came directly, no lead pipeline)
+ *
+ * Custom validation ensures at least one is provided.
+ * The service layer enforces the business rules for each path.
+ */
 @Getter
 @Setter
 public class CreateInquiryRequest {
+
+    /*
+     * Optional — provide when inquiry comes from a lead.
+     * If provided, lead status → CONVERTED automatically.
+     */
+    private UUID leadId;
+
+    /*
+     * Optional — provide when an existing client
+     * has a new project (direct inquiry).
+     * If provided, leadId must be null.
+     */
+    private UUID clientId;
+
+    private UUID clientContactId;
 
     @NotBlank(message = "Project name is required")
     @Size(min = 2, max = 255)
@@ -21,24 +52,8 @@ public class CreateInquiryRequest {
 
     private String description;
 
-    /*
-     * Drawing and document references.
-     * Marketing team enters dates from the documents
-     * the fabricator shared.
-     *
-     * Example:
-     * [
-     *   { "type": "Structural Drawing",
-     *     "date": "2026-01-10",
-     *     "revision": "Rev A" },
-     *   { "type": "Architectural Drawing",
-     *     "date": "2026-01-08" }
-     * ]
-     */
     private List<DocumentReference> documentReferences;
 
-    private UUID clientId;
-    private UUID clientContactId;
     private String notes;
 
     @Getter

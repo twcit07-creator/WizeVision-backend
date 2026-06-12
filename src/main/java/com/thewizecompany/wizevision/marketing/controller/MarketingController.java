@@ -114,8 +114,8 @@ public class MarketingController {
                                 status,
                                 assignedToId,
                                 PageRequest.of(
-                                        page, size,
-                                        Sort.by("createdAt").descending()
+                                        page, size
+
                                 )
                         )
                 )
@@ -168,54 +168,91 @@ public class MarketingController {
         );
     }
 
-    @PostMapping("/leads/{id}/convert")
-    @PreAuthorize(
-            "hasAnyRole('SUPER_ADMIN','ADMIN','MARKETING_EXECUTIVE')"
-    )
-    @Operation(
-            summary = "Convert lead to client + create inquiry",
-            description = "Marks lead as converted, creates a client " +
-                    "(or links existing one), and creates a " +
-                    "project inquiry ready to forward to PM."
-    )
-    public ResponseEntity<ApiResponse<InquiryResponse>>
-    convertLead(
-            @PathVariable UUID id,
-            @Valid @RequestBody ConvertLeadRequest request) {
-
-        return ResponseEntity.ok(
-                ApiResponse.ok(
-                        marketingService.convertLead(id, request),
-                        "Lead converted successfully. " +
-                                "Inquiry created — forward to PM when ready."
-                )
-        );
-    }
+//    @PostMapping("/leads/{id}/convert")
+//    @PreAuthorize(
+//            "hasAnyRole('SUPER_ADMIN','ADMIN','MARKETING_EXECUTIVE')"
+//    )
+//    @Operation(
+//            summary = "Convert lead to client + create inquiry",
+//            description = "Marks lead as converted, creates a client " +
+//                    "(or links existing one), and creates a " +
+//                    "project inquiry ready to forward to PM."
+//    )
+//    public ResponseEntity<ApiResponse<InquiryResponse>>
+//    convertLead(
+//            @PathVariable UUID id,
+//            @Valid @RequestBody ConvertLeadRequest request) {
+//
+//        return ResponseEntity.ok(
+//                ApiResponse.ok(
+//                        marketingService.convertLead(id, request),
+//                        "Lead converted successfully. " +
+//                                "Inquiry created — forward to PM when ready."
+//                )
+//        );
+//    }
 
     // ─────────────────────────────────────────────────────────
     // PROJECT INQUIRIES
     // ─────────────────────────────────────────────────────────
 
-    @PostMapping("/inquiries")
-    @PreAuthorize(
-            "hasAnyRole('SUPER_ADMIN','ADMIN','MARKETING_EXECUTIVE')"
-    )
-    @Operation(
-            summary = "Create direct inquiry (existing client)",
-            description = "Use when an existing client calls " +
-                    "directly with a new project."
-    )
-    public ResponseEntity<ApiResponse<InquiryResponse>>
-    createDirectInquiry(
-            @Valid @RequestBody CreateInquiryRequest request) {
+//    @PostMapping("/inquiries")
+//    @PreAuthorize(
+//            "hasAnyRole('SUPER_ADMIN','ADMIN','MARKETING_EXECUTIVE')"
+//    )
+//    @Operation(
+//            summary = "Create direct inquiry (existing client)",
+//            description = "Use when an existing client calls " +
+//                    "directly with a new project."
+//    )
+//    public ResponseEntity<ApiResponse<InquiryResponse>>
+//    createDirectInquiry(
+//            @Valid @RequestBody CreateInquiryRequest request) {
+//
+//        return ResponseEntity
+//                .status(HttpStatus.CREATED)
+//                .body(ApiResponse.ok(
+//                        marketingService.createDirectInquiry(request),
+//                        "Inquiry created successfully"
+//                ));
+//    }
+@PostMapping("/inquiries")
+@PreAuthorize(
+        "hasAnyRole('SUPER_ADMIN','ADMIN','MARKETING_EXECUTIVE')"
+)
+@Operation(
+        summary = "Create a project inquiry",
+        description = """
+        Creates a project inquiry from one of two sources:
 
-        return ResponseEntity
-                .status(HttpStatus.CREATED)
-                .body(ApiResponse.ok(
-                        marketingService.createDirectInquiry(request),
-                        "Inquiry created successfully"
-                ));
-    }
+        FROM A LEAD (prospect company):
+          Provide leadId only. clientId must be null.
+          Lead status is automatically updated to CONVERTED.
+          The company becomes a client only when the bid is accepted.
+
+        FROM AN EXISTING CLIENT (direct inquiry):
+          Provide clientId only. leadId must be null.
+          Use when an existing client calls with a new project.
+
+        Exactly one of leadId or clientId must be provided.
+        """
+)
+public ResponseEntity<ApiResponse<InquiryResponse>>
+createInquiry(
+        @Valid @RequestBody CreateInquiryRequest request,
+        @AuthenticationPrincipal String currentUserEmail) {
+
+    UUID currentUserId = resolveEmployeeId(currentUserEmail);
+
+    return ResponseEntity
+            .status(HttpStatus.CREATED)
+            .body(ApiResponse.ok(
+                    marketingService.createInquiry(
+                            request, currentUserId
+                    ),
+                    "Inquiry created successfully"
+            ));
+}
 
     @GetMapping("/inquiries/{id}")
     @PreAuthorize(
@@ -254,8 +291,7 @@ public class MarketingController {
                                 status,
                                 forwardedToId,
                                 PageRequest.of(
-                                        page, size,
-                                        Sort.by("createdAt").descending()
+                                        page, size
                                 )
                         )
                 )

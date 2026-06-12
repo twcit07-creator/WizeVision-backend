@@ -39,6 +39,7 @@ public class InvoiceResponse {
     private final BigDecimal totalAmount;
     private final BigDecimal amountPaid;
     private final BigDecimal outstandingAmount;
+    private final BigDecimal invoicedPercentage;
 
     private final InvoiceStatus status;
     private final String statusDisplay;

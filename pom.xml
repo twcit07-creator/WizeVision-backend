@@ -283,11 +283,11 @@
             <artifactId>spring-boot-starter-thymeleaf</artifactId>
         </dependency>
 
-        <!-- Flying Saucer — HTML to PDF converter -->
+        <!-- Open html to pdf — HTML to PDF converter -->
         <dependency>
-            <groupId>org.xhtmlrenderer</groupId>
-            <artifactId>flying-saucer-pdf</artifactId>
-            <version>9.3.1</version>
+            <groupId>io.github.openhtmltopdf</groupId>
+            <artifactId>openhtmltopdf-pdfbox</artifactId>
+            <version>1.1.37</version>
         </dependency>
 
         <!-- iText PDF library (required by Flying Saucer) -->

@@ -11,6 +11,7 @@ import lombok.Getter;
 import lombok.Setter;
 
 import java.time.LocalDate;
+import java.util.UUID;
 
 /*
  * UPDATE EMPLOYEE REQUEST DTO
@@ -45,11 +46,9 @@ public class UpdateEmployeeRequest {
      */
     private Role role;
 
-    @Enumerated(EnumType.STRING)
-    private Department department;
+    private UUID departmentId;
 
-    @Enumerated(EnumType.STRING)
-    private Designation designation;
+    private UUID designationId;
 
     private LocalDate joiningDate;
 

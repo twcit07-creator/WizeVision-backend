@@ -8,17 +8,17 @@ import com.thewizecompany.wizevision.client.repository.ClientRepository;
 import com.thewizecompany.wizevision.employee.domain.Employee;
 import com.thewizecompany.wizevision.employee.repository.EmployeeRepository;
 import com.thewizecompany.wizevision.invoicing.domain.*;
-import com.thewizecompany.wizevision.invoicing.dto.CreateInvoiceRequest;
-import com.thewizecompany.wizevision.invoicing.dto.InvoiceResponse;
-import com.thewizecompany.wizevision.invoicing.dto.InvoiceSummaryResponse;
-import com.thewizecompany.wizevision.invoicing.dto.PaymentResponse;
-import com.thewizecompany.wizevision.invoicing.dto.RecordPaymentRequest;
+import com.thewizecompany.wizevision.invoicing.dto.*;
 import com.thewizecompany.wizevision.invoicing.repository.InvoiceRepository;
 import com.thewizecompany.wizevision.invoicing.repository.PaymentRepository;
+import com.thewizecompany.wizevision.projects.domain.ChangeOrder;
+import com.thewizecompany.wizevision.projects.domain.Project;
 import com.thewizecompany.wizevision.projects.repository.ProjectRepository;
+import com.thewizecompany.wizevision.shared.domain.SequenceType;
 import com.thewizecompany.wizevision.shared.exception.BusinessException;
 import com.thewizecompany.wizevision.shared.exception.ResourceNotFoundException;
 import com.thewizecompany.wizevision.shared.responses.PageResponse;
+import com.thewizecompany.wizevision.shared.service.SequenceService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.domain.Page;
@@ -50,6 +50,7 @@ public class InvoicingService {
     private final EmployeeRepository employeeRepository;
     private final ObjectMapper objectMapper;
     private final ChangeOrderRepository changeOrderRepository;
+    private final SequenceService sequenceService;
 
     // ─────────────────────────────────────────────────────────
     // CREATE INVOICE
@@ -77,8 +78,7 @@ public class InvoicingService {
         /*
          * STEP 1: Resolve the change order if applicable.
          */
-        com.thewizecompany.wizevision.projects.domain
-                .ChangeOrder changeOrder = null;
+        ChangeOrder changeOrder = null;
 
         if (request.getTargetType()
                 == InvoiceTargetType.CHANGE_ORDER) {
@@ -394,6 +394,242 @@ public class InvoicingService {
 
         return mapToResponse(invoiceRepository.save(invoice));
     }
+    // ─────────────────────────────────────────────────────────
+    // UPDATE AMOUNT
+    // ─────────────────────────────────────────────────────────
+
+    @Transactional
+    public InvoiceResponse updateInvoice(
+            UUID invoiceId,
+            UpdateInvoiceRequest request) {
+
+        Invoice invoice = findInvoice(invoiceId);
+
+        /*
+         * Cannot update if any payment has been received.
+         * Even partial payment locks the invoice.
+         */
+        if (invoice.getAmountPaid()
+                .compareTo(BigDecimal.ZERO) != 0) {
+            throw new BusinessException(
+                    "Cannot update an invoice that has " +
+                            "received payments. " +
+                            "Outstanding: " + invoice.getOutstandingAmount(),
+                    "INVOICE_HAS_PAYMENTS"
+            );
+        }
+
+        /*
+         * Cannot update a cancelled invoice.
+         */
+        if (invoice.getStatus() == InvoiceStatus.CANCELLED) {
+            throw new BusinessException(
+                    "Cannot update a cancelled invoice.",
+                    "INVOICE_CANCELLED"
+            );
+        }
+
+        /*
+         * Resolve the new subtotal if amount or percentage changed.
+         */
+        BigDecimal newSubtotal = null;
+        BigDecimal newPercentage = null;
+
+        if (request.getAmount() != null
+                && request.getAmount()
+                .compareTo(BigDecimal.ZERO) > 0) {
+
+            newSubtotal = request.getAmount();
+            // amount overrides percentage
+
+        } else if (request.getPercentage() != null
+                && request.getPercentage()
+                .compareTo(BigDecimal.ZERO) > 0) {
+
+            /*
+             * Recalculate amount from percentage.
+             * Need the target amount to do this.
+             */
+            BigDecimal targetAmount = resolveTargetAmount(
+                    invoice
+            );
+
+            newSubtotal = targetAmount
+                    .multiply(request.getPercentage())
+                    .divide(
+                            new BigDecimal("100"),
+                            2,
+                            java.math.RoundingMode.HALF_UP
+                    );
+            newPercentage = request.getPercentage();
+        }
+
+        /*
+         * Over-billing check if amount is changing.
+         */
+        if (newSubtotal != null) {
+
+            /*
+             * Sum all other invoices for this same target
+             * EXCLUDING the current invoice being updated.
+             * Otherwise the current invoice counts against itself.
+             */
+            BigDecimal otherInvoicesTotal =
+                    invoiceRepository
+                            .findByProjectIdAndIsDeletedFalse(
+                                    invoice.getProjectId()
+                            )
+                            .stream()
+                            .filter(i ->
+                                    !i.getId().equals(invoiceId)
+                                            && i.getStatus() != InvoiceStatus.CANCELLED
+                                            && i.getTargetType()
+                                            == invoice.getTargetType()
+                                            && isSameTarget(i, invoice)
+                            )
+                            .map(Invoice::getSubtotal)
+                            .reduce(BigDecimal.ZERO, BigDecimal::add);
+
+            BigDecimal targetAmount = resolveTargetAmount(invoice);
+            BigDecimal newTotal = otherInvoicesTotal.add(newSubtotal);
+
+            if (newTotal.compareTo(targetAmount) > 0) {
+                BigDecimal remaining =
+                        targetAmount.subtract(otherInvoicesTotal);
+                throw new BusinessException(
+                        String.format(
+                                "Updated amount exceeds remaining balance. " +
+                                        "Maximum allowed for this invoice: %.2f",
+                                remaining
+                        ),
+                        "OVER_BILLING"
+                );
+            }
+
+            /*
+             * Update subtotal and recalculate tax + total.
+             * Never set totalAmount directly —
+             * always go through calculateAmounts().
+             */
+            invoice.setSubtotal(newSubtotal);
+            invoice.calculateAmounts();
+
+            /*
+             * Update billing status based on new total.
+             */
+            BillingStatus newBillingStatus =
+                    newTotal.compareTo(targetAmount) == 0
+                            ? BillingStatus.FULL_AND_FINAL
+                            : BillingStatus.PARTIAL;
+
+            invoice.setBillingStatus(newBillingStatus);
+
+            if(newPercentage != null) {
+                invoice.setBillingPercentage(newPercentage);
+            } else {
+                /*
+                 * Amount was set directly — clear percentage
+                 * to avoid showing a stale/wrong value.
+                 */
+                invoice.setBillingPercentage(null);
+            }
+        }
+
+        /*
+         * Update non-financial fields — always safe.
+         */
+        if (request.getNote() != null) {
+            invoice.setNotes(request.getNote());
+        }
+
+        if (request.getDueDate() != null) {
+            invoice.setDueDate(request.getDueDate());
+        }
+
+        /*
+         * Reset to DRAFT only if currently SENT.
+         * If already DRAFT → stays DRAFT, no change needed.
+         * If PARTIALLY_PAID → blocked at the top already.
+         *
+         * Do NOT clear sentAt — keep it as audit record
+         * of when it was previously sent.
+         * The status change itself is the indicator.
+         */
+        if (invoice.getStatus() == InvoiceStatus.SENT) {
+            invoice.setStatus(InvoiceStatus.DRAFT);
+            log.info(
+                    "Invoice {} reset to DRAFT after update",
+                    invoice.getInvoiceNumber()
+            );
+        }
+
+        Invoice saved = invoiceRepository.save(invoice);
+
+        log.info(
+                "Invoice updated: {} — new amount: {}",
+                saved.getInvoiceNumber(),
+                saved.getTotalAmount()
+        );
+
+        return mapToResponse(saved);
+    }
+
+    /*
+     * Resolves the target amount for this invoice.
+     * Used for over-billing check and percentage calculation.
+     */
+    private BigDecimal resolveTargetAmount(Invoice invoice) {
+        if (invoice.getTargetType()
+                == InvoiceTargetType.CONTRACT_BASE) {
+
+            return projectRepository
+                    .findByIdAndIsDeletedFalse(
+                            invoice.getProjectId()
+                    )
+                    .map(Project::getContractAmount)
+                    .orElseThrow(() ->
+                            new ResourceNotFoundException(
+                                    "Project",
+                                    invoice.getProjectId().toString()
+                            )
+                    );
+        }
+
+        /*
+         * CHANGE_ORDER target.
+         */
+        return changeOrderRepository
+                .findByIdAndIsDeletedFalse(
+                        invoice.getChangeOrderId()
+                )
+                .map(ChangeOrder::getAmount)
+                .orElseThrow(() ->
+                        new ResourceNotFoundException(
+                                "ChangeOrder",
+                                invoice.getChangeOrderId().toString()
+                        )
+                );
+    }
+
+    /*
+     * Checks if two invoices target the same change order.
+     * For CONTRACT_BASE invoices this always returns true
+     * (same project + same target type is enough).
+     */
+    private boolean isSameTarget(Invoice a, Invoice b) {
+        if (a.getTargetType() == InvoiceTargetType.CONTRACT_BASE) {
+            return true;
+        }
+        /*
+         * CHANGE_ORDER: must be the same change order UUID.
+         */
+        if (a.getChangeOrderId() == null
+                || b.getChangeOrderId() == null) {
+            return false;
+        }
+        return a.getChangeOrderId()
+                .equals(b.getChangeOrderId());
+    }
 
     // ─────────────────────────────────────────────────────────
     // RECORD PAYMENT
@@ -648,16 +884,20 @@ public class InvoicingService {
 
     private String generateInvoiceNumber() {
         int year = Year.now().getValue();
-        long count = invoiceRepository.countByIsDeletedFalse();
-        return "INV-" + year + "-"
-                + String.format("%03d", count + 1);
+        Integer sequence = sequenceService.nextSequence(
+                SequenceType.INVOICE,
+                year
+        );
+        return String.format("TWC-INV-%d-%03d", year, sequence);
     }
 
     private String generatePaymentNumber() {
         int year = Year.now().getValue();
-        long count = paymentRepository.countByIsDeletedFalse();
-        return "PAY-" + year + "-"
-                + String.format("%03d", count + 1);
+        Integer sequence = sequenceService.nextSequence(
+                SequenceType.PAYMENT,
+                year
+        );
+        return String.format("TWC-PAY-%d-%03d", year, sequence);
     }
 
     private InvoiceResponse mapToResponse(Invoice invoice) {
@@ -738,6 +978,7 @@ public class InvoicingService {
                 .createdAt(invoice.getCreatedAt())
                 .createdBy(invoice.getCreatedBy())
                 .payments(payments)
+                .invoicedPercentage(invoice.getBillingPercentage())
                 .build();
     }
 

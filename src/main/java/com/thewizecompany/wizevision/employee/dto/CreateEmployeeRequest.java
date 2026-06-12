@@ -64,11 +64,9 @@ public class CreateEmployeeRequest {
     @NotNull(message = "Role is required")
     private Role role;
 
-    @Enumerated(EnumType.STRING)
-    private Department department;
+    private String departmentId;
 
-   @Enumerated(EnumType.STRING)
-    private Designation designation;
+    private String designationId;
 
     private LocalDate joiningDate;
 }

@@ -1,18 +1,21 @@
 package com.thewizecompany.wizevision.employee.service;
 
 import com.thewizecompany.wizevision.auth.repository.RefreshTokenRepository;
+import com.thewizecompany.wizevision.employee.domain.Department;
+import com.thewizecompany.wizevision.employee.domain.Designation;
 import com.thewizecompany.wizevision.employee.domain.Employee;
 import com.thewizecompany.wizevision.employee.domain.Role;
-import com.thewizecompany.wizevision.employee.dto.AttendancePinRequest;
-import com.thewizecompany.wizevision.employee.dto.CreateEmployeeRequest;
-import com.thewizecompany.wizevision.employee.dto.EmployeeResponse;
-import com.thewizecompany.wizevision.employee.dto.UpdateEmployeeRequest;
+import com.thewizecompany.wizevision.employee.dto.*;
 import com.thewizecompany.wizevision.employee.mapper.EmployeeMapper;
+import com.thewizecompany.wizevision.employee.repository.DepartmentRepository;
+import com.thewizecompany.wizevision.employee.repository.DesignationRepository;
 import com.thewizecompany.wizevision.employee.repository.EmployeeRepository;
+import com.thewizecompany.wizevision.shared.domain.SequenceType;
 import com.thewizecompany.wizevision.shared.exception.BusinessException;
 import com.thewizecompany.wizevision.shared.exception.DuplicateResourceException;
 import com.thewizecompany.wizevision.shared.exception.ResourceNotFoundException;
 import com.thewizecompany.wizevision.shared.responses.PageResponse;
+import com.thewizecompany.wizevision.shared.service.SequenceService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.domain.Page;
@@ -24,6 +27,7 @@ import org.springframework.transaction.annotation.Transactional;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.time.Year;
+import java.util.List;
 import java.util.UUID;
 
 @Slf4j
@@ -35,6 +39,9 @@ public class EmployeeService {
     private final RefreshTokenRepository refreshTokenRepository;
     private final PasswordEncoder passwordEncoder;
     private final EmployeeMapper employeeMapper;
+    private final DepartmentRepository departmentRepository;
+    private final DesignationRepository designationRepository;
+    private final SequenceService sequenceService;
 
     // ─────────────────────────────────────────────────────────
     // CREATE
@@ -90,8 +97,8 @@ public class EmployeeService {
                         passwordEncoder.encode(temporaryPassword)
                 )
                 .role(request.getRole())
-                .department(request.getDepartment())
-                .designation(request.getDesignation())
+                .department(departmentRepository.getReferenceById(UUID.fromString(request.getDepartmentId())))
+                .designation(designationRepository.getReferenceById(UUID.fromString(request.getDesignationId())))
                 .joiningDate(
                         request.getJoiningDate() != null
                                 ? request.getJoiningDate()
@@ -196,11 +203,15 @@ public class EmployeeService {
         if (request.getRole() != null) {
             employee.setRole(request.getRole());
         }
-        if (request.getDepartment() != null) {
-            employee.setDepartment(request.getDepartment());
+        if (request.getDepartmentId() != null) {
+            Department department = departmentRepository.findById(request.getDepartmentId()).
+                    orElseThrow(() -> new ResourceNotFoundException("Department not found!"));
+            employee.setDepartment(department);
         }
-        if (request.getDesignation() != null) {
-            employee.setDesignation(request.getDesignation());
+        if (request.getDesignationId() != null) {
+            Designation designation = designationRepository.findById(request.getDesignationId()).
+                    orElseThrow(() -> new ResourceNotFoundException("Designation not found!"));
+            employee.setDesignation(designation);
         }
         if (request.getJoiningDate() != null) {
             employee.setJoiningDate(request.getJoiningDate());
@@ -332,11 +343,12 @@ public class EmployeeService {
     }
 
     private String generateEmployeeCode() {
-
-        String prefix = "TWC-";
-        long count = employeeRepository
-                .countByEmployeeCodeStartingWith(prefix);
-        return prefix + String.format("%03d", count + 1);
+        int year = Year.now().getValue();
+        Integer sequence = sequenceService.nextSequence(
+                SequenceType.EMPLOYEE,
+                year
+        );
+        return String.format("TWC-EMP-%d-%03d", year, sequence);
     }
 
     private String generateTemporaryPassword(
@@ -399,4 +411,15 @@ public class EmployeeService {
                 resetByEmail
         );
     }
+
+    public List<ProjectManagerListResponse> getProjectManagerList(){
+        List<Employee> employees = employeeRepository.findAllByRole(Role.PROJECT_MANAGER);
+        return employees.stream()
+                .map(employee -> ProjectManagerListResponse.builder()
+                        .id(employee.getId())
+                        .name(employee.getFullName())
+                        .build())
+                .toList();
+    }
+
 }

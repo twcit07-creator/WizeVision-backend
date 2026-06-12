@@ -61,4 +61,13 @@ public class BidResponseForPm {
     private final String rejectionReason;
     private final UUID convertedProjectId;
     private final Instant createdAt;
+
+    /*
+     * Company name shown to PM.
+     * For existing clients → comes from client record.
+     * For prospects (lead-based) → comes from lead record.
+     * PM always sees the company name regardless of
+     * whether a client record exists yet.
+     */
+    private final String companyName;
 }

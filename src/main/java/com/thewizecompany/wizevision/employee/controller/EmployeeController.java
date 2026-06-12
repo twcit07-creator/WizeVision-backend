@@ -1,9 +1,6 @@
 package com.thewizecompany.wizevision.employee.controller;
 
-import com.thewizecompany.wizevision.employee.dto.AttendancePinRequest;
-import com.thewizecompany.wizevision.employee.dto.CreateEmployeeRequest;
-import com.thewizecompany.wizevision.employee.dto.EmployeeResponse;
-import com.thewizecompany.wizevision.employee.dto.UpdateEmployeeRequest;
+import com.thewizecompany.wizevision.employee.dto.*;
 import com.thewizecompany.wizevision.employee.service.EmployeeService;
 import com.thewizecompany.wizevision.shared.responses.ApiResponse;
 import com.thewizecompany.wizevision.shared.responses.PageResponse;
@@ -30,6 +27,7 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
+import java.util.List;
 import java.util.UUID;
 
 /*
@@ -205,6 +203,16 @@ public class EmployeeController {
 
         return ResponseEntity.ok(
                 ApiResponse.ok("Attendance PIN reset successfully")
+        );
+    }
+
+    @GetMapping("/pm")
+    @PreAuthorize("hasAnyRole('SUPER_ADMIN', 'ADMIN', 'HR_MANAGER', 'MARKETING_EXECUTIVE')")
+    public ResponseEntity<ApiResponse<List<ProjectManagerListResponse>>> getProjectManagerList(){
+        return ResponseEntity.ok(
+                ApiResponse.ok(
+                        employeeService.getProjectManagerList()
+                )
         );
     }
 }

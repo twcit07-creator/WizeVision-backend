@@ -1,11 +1,7 @@
 package com.thewizecompany.wizevision.invoicing.controller;
 
 import com.thewizecompany.wizevision.employee.repository.EmployeeRepository;
-import com.thewizecompany.wizevision.invoicing.dto.CreateInvoiceRequest;
-import com.thewizecompany.wizevision.invoicing.dto.InvoiceResponse;
-import com.thewizecompany.wizevision.invoicing.dto.InvoiceSummaryResponse;
-import com.thewizecompany.wizevision.invoicing.dto.PaymentResponse;
-import com.thewizecompany.wizevision.invoicing.dto.RecordPaymentRequest;
+import com.thewizecompany.wizevision.invoicing.dto.*;
 import com.thewizecompany.wizevision.invoicing.service.InvoicingService;
 import com.thewizecompany.wizevision.shared.domain.BaseEntity;
 import com.thewizecompany.wizevision.shared.exception.ResourceNotFoundException;
@@ -32,6 +28,7 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
+import java.math.BigDecimal;
 import java.util.List;
 import java.util.UUID;
 
@@ -106,8 +103,8 @@ public class InvoicingController {
                         invoicingService.search(
                                 search, status, clientId, projectId,
                                 PageRequest.of(
-                                        page, size,
-                                        Sort.by("invoiceDate").descending()
+                                        page, size
+
                                 )
                         )
                 )
@@ -143,6 +140,21 @@ public class InvoicingController {
                 ApiResponse.ok(
                         invoicingService.markAsSent(id),
                         "Invoice marked as sent"
+                )
+        );
+    }
+
+    @PatchMapping("/{id}/update")
+    @PreAuthorize("hasAnyRole('SUPER_ADMIN', 'ADMIN')")
+    @Operation(summary = "Update invoice",
+    description = "cannot update if payment is received")
+    public ResponseEntity<ApiResponse<InvoiceResponse>> update(
+            @PathVariable UUID id,
+            @Valid @RequestBody UpdateInvoiceRequest request
+            ){
+        return ResponseEntity.ok(
+                ApiResponse.ok(
+                        invoicingService.updateInvoice(id, request)
                 )
         );
     }

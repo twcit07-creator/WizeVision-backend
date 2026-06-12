@@ -1,5 +1,6 @@
 package com.thewizecompany.wizevision.client.service;
 
+import com.thewizecompany.wizevision.bidding.repository.BidRepository;
 import com.thewizecompany.wizevision.client.domain.Client;
 import com.thewizecompany.wizevision.client.domain.ClientContact;
 import com.thewizecompany.wizevision.client.dto.ClientContactResponse;
@@ -11,10 +12,13 @@ import com.thewizecompany.wizevision.client.dto.UpdateClientContactRequest;
 import com.thewizecompany.wizevision.client.dto.UpdateClientRequest;
 import com.thewizecompany.wizevision.client.repository.ClientContactRepository;
 import com.thewizecompany.wizevision.client.repository.ClientRepository;
+import com.thewizecompany.wizevision.projects.repository.ProjectRepository;
+import com.thewizecompany.wizevision.shared.domain.SequenceType;
 import com.thewizecompany.wizevision.shared.exception.BusinessException;
 import com.thewizecompany.wizevision.shared.exception.DuplicateResourceException;
 import com.thewizecompany.wizevision.shared.exception.ResourceNotFoundException;
 import com.thewizecompany.wizevision.shared.responses.PageResponse;
+import com.thewizecompany.wizevision.shared.service.SequenceService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.domain.Page;
@@ -22,6 +26,7 @@ import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.time.Year;
 import java.util.List;
 import java.util.UUID;
 
@@ -32,6 +37,9 @@ public class ClientService {
 
     private final ClientRepository clientRepository;
     private final ClientContactRepository contactRepository;
+    private final ProjectRepository projectRepository;
+    private final BidRepository bidRepository;
+    private final SequenceService sequenceService;
 
     // ─────────────────────────────────────────────────────────
     // CLIENT CRUD
@@ -390,8 +398,12 @@ public class ClientService {
     }
 
     private String generateCompanyCode() {
-        long count = clientRepository.countByIsDeletedFalse();
-        return "WC-" + String.format("%03d", count + 1);
+        int year = Year.now().getValue();
+        Integer sequence = sequenceService.nextSequence(
+                SequenceType.CLIENT,
+                year
+        );
+        return String.format("TWC-CLI-%d-%03d", year, sequence);
     }
 
     private ClientResponse mapToResponse(Client client) {
@@ -403,6 +415,12 @@ public class ClientService {
                         .stream()
                         .map(this::mapContactToResponse)
                         .toList();
+        long totalProjects = projectRepository.countByClientIdAndIsDeletedFalse(
+                client.getId()
+        );
+        long totalBids = bidRepository.countByClientIdAndIsDeletedFalse(
+                client.getId()
+        );
 
         return ClientResponse.builder()
                 .id(client.getId())
@@ -424,8 +442,8 @@ public class ClientService {
                 .createdAt(client.getCreatedAt())
                 .createdBy(client.getCreatedBy())
                 .contacts(contacts)
-                .totalProjects(0L)  // populated when projects module is built
-                .totalBids(0L)      // populated when bidding module is built
+                .totalProjects(totalProjects)
+                .totalBids(totalBids)
                 .build();
     }
 

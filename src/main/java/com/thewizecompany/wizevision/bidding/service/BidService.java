@@ -18,12 +18,16 @@ import com.thewizecompany.wizevision.client.repository.ClientRepository;
 import com.thewizecompany.wizevision.employee.domain.Employee;
 import com.thewizecompany.wizevision.employee.repository.EmployeeRepository;
 import com.thewizecompany.wizevision.marketing.domain.InquiryStatus;
+import com.thewizecompany.wizevision.marketing.domain.Lead;
 import com.thewizecompany.wizevision.marketing.domain.ProjectInquiry;
+import com.thewizecompany.wizevision.marketing.repository.LeadRepository;
 import com.thewizecompany.wizevision.marketing.repository.ProjectInquiryRepository;
 import com.thewizecompany.wizevision.projects.service.ProjectService;
+import com.thewizecompany.wizevision.shared.domain.SequenceType;
 import com.thewizecompany.wizevision.shared.exception.BusinessException;
 import com.thewizecompany.wizevision.shared.exception.ResourceNotFoundException;
 import com.thewizecompany.wizevision.shared.responses.PageResponse;
+import com.thewizecompany.wizevision.shared.service.SequenceService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.domain.Page;
@@ -48,6 +52,8 @@ public class BidService {
     private final ProjectInquiryRepository inquiryRepository;
     private final ObjectMapper objectMapper;
     private final ProjectService projectService;
+    private final LeadRepository leadRepository;
+    private final SequenceService sequenceService;
 
     // ─────────────────────────────────────────────────────────
     // CREATE BID (PM)
@@ -59,22 +65,26 @@ public class BidService {
             UUID pmId) {
 
         /*
-         * Validate client exists.
+         * VALIDATION:
+         * Must have inquiryId OR clientId.
+         * If no inquiry and no client → reject.
          */
-        clientRepository
-                .findByIdAndIsDeletedFalse(request.getClientId())
-                .orElseThrow(() ->
-                        new ResourceNotFoundException(
-                                "Client",
-                                request.getClientId().toString()
-                        )
-                );
+        if (request.getInquiryId() == null
+                && request.getClientId() == null) {
+            throw new BusinessException(
+                    "A bid must be linked to either a project " +
+                            "inquiry or an existing client.",
+                    "BID_SOURCE_REQUIRED"
+            );
+        }
 
-        /*
-         * If created from inquiry, validate inquiry exists
-         * and update its status to BID_IN_PROGRESS.
-         */
+        UUID resolvedClientId = null;
+        String resolvedCompanyName = null;
+        UUID resolvedContactId = request.getClientContactId();
+
+        // ── PATH A: FROM INQUIRY ──────────────────────────────
         if (request.getInquiryId() != null) {
+
             var inquiry = inquiryRepository
                     .findByIdAndIsDeletedFalse(
                             request.getInquiryId()
@@ -88,13 +98,82 @@ public class BidService {
 
             if (inquiry.getStatus() != InquiryStatus.FORWARDED) {
                 throw new BusinessException(
-                        "Inquiry is not in FORWARDED status",
+                        "Inquiry must be in FORWARDED status. " +
+                                "Current status: " +
+                                inquiry.getStatus().getDisplayName(),
                         "INQUIRY_NOT_FORWARDED"
                 );
             }
 
+            /*
+             * Resolve company info from inquiry.
+             *
+             * Case 1: Inquiry has clientId (direct inquiry)
+             *   → Use existing client
+             *
+             * Case 2: Inquiry has leadId (lead-based inquiry)
+             *   → Company is still a prospect
+             *   → clientId stays null on bid
+             *   → Company name comes from lead
+             */
+            if (inquiry.getClientId() != null) {
+                /*
+                 * Direct inquiry — client already exists.
+                 */
+                resolvedClientId = inquiry.getClientId();
+
+                resolvedCompanyName = clientRepository
+                        .findByIdAndIsDeletedFalse(
+                                inquiry.getClientId()
+                        )
+                        .map(Client::getCompanyName)
+                        .orElse(null);
+
+            } else if (inquiry.getLeadId() != null) {
+                /*
+                 * Lead-based inquiry — prospect not yet a client.
+                 * clientId remains null.
+                 * Company name comes from the lead record.
+                 */
+                resolvedCompanyName = leadRepository
+                        .findByIdAndIsDeletedFalse(
+                                inquiry.getLeadId()
+                        )
+                        .map(Lead::getCompanyName)
+                        .orElse("Unknown Company");
+            }
+
+            /*
+             * Use contact from inquiry if PM did not specify one.
+             */
+            if (resolvedContactId == null) {
+                resolvedContactId = inquiry.getClientContactId();
+            }
+
+            /*
+             * Update inquiry status.
+             */
             inquiry.setStatus(InquiryStatus.BID_IN_PROGRESS);
             inquiryRepository.save(inquiry);
+        }
+
+        // ── PATH B: DIRECT BID (no inquiry) ──────────────────
+        if (request.getInquiryId() == null
+                && request.getClientId() != null) {
+
+            var client = clientRepository
+                    .findByIdAndIsDeletedFalse(
+                            request.getClientId()
+                    )
+                    .orElseThrow(() ->
+                            new ResourceNotFoundException(
+                                    "Client",
+                                    request.getClientId().toString()
+                            )
+                    );
+
+            resolvedClientId = client.getId();
+            resolvedCompanyName = client.getCompanyName();
         }
 
         String bidNumber = generateBidNumber();
@@ -102,8 +181,8 @@ public class BidService {
         Bid bid = Bid.builder()
                 .bidNumber(bidNumber)
                 .inquiryId(request.getInquiryId())
-                .clientId(request.getClientId())
-                .clientContactId(request.getClientContactId())
+                .clientId(resolvedClientId)   // null for prospect bids
+                .clientContactId(resolvedContactId)
                 .projectName(request.getProjectName().trim())
                 .projectLocation(request.getProjectLocation())
                 .scopeOfWork(request.getScopeOfWork())
@@ -124,8 +203,10 @@ public class BidService {
         Bid saved = bidRepository.save(bid);
 
         log.info(
-                "Bid created: {} by PM: {}",
-                saved.getBidNumber(), pmId
+                "Bid created: {} for company: {} by PM: {}",
+                saved.getBidNumber(),
+                resolvedCompanyName,
+                pmId
         );
 
         return mapToPmResponse(saved);
@@ -342,30 +423,97 @@ public class BidService {
 
             case ACCEPTED -> {
                 bid.setStatus(BidStatus.ACCEPTED);
+                bidRepository.save(bid);
 
+                /*
+                 * If this bid came from a lead-based inquiry,
+                 * NOW is when we create the client record.
+                 * The prospect has accepted our bid — they are
+                 * officially a client.
+                 */
                 if (bid.getInquiryId() != null) {
                     inquiryRepository
                             .findByIdAndIsDeletedFalse(bid.getInquiryId())
                             .ifPresent(inquiry -> {
                                 inquiry.setStatus(InquiryStatus.BID_CREATED);
                                 inquiry.setBidId(bid.getId());
+
+                                /*
+                                 * If inquiry came from a lead and has no
+                                 * client yet, create the client now.
+                                 */
+                                if (inquiry.getLeadId() != null
+                                        && inquiry.getClientId() == null) {
+
+                                    leadRepository
+                                            .findByIdAndIsDeletedFalse(
+                                                    inquiry.getLeadId()
+                                            )
+                                            .ifPresent(lead -> {
+                                                /*
+                                                 * Create client from lead data.
+                                                 * This is the moment a prospect
+                                                 * becomes a client.
+                                                 */
+                                                Client newClient = Client.builder()
+                                                        .companyCode(
+                                                                generateClientCode()
+                                                        )
+                                                        .companyName(
+                                                                lead.getCompanyName()
+                                                        )
+                                                        .email(lead.getContactEmail())
+                                                        .phone(lead.getContactPhone())
+                                                        .city(lead.getCity())
+                                                        .state(lead.getState())
+                                                        .country(lead.getCountry())
+                                                        .industryType(
+                                                                lead.getIndustryType()
+                                                        )
+                                                        .isActive(true)
+                                                        .build();
+
+                                                Client savedClient =
+                                                        clientRepository.save(newClient);
+
+                                                /*
+                                                 * Link the client back to the
+                                                 * inquiry and the lead.
+                                                 */
+                                                inquiry.setClientId(
+                                                        savedClient.getId()
+                                                );
+                                                lead.setClientId(
+                                                        savedClient.getId()
+                                                );
+                                                leadRepository.save(lead);
+
+                                                /*
+                                                 * Also update the bid's clientId
+                                                 * so the project gets the right client.
+                                                 */
+                                                bid.setClientId(savedClient.getId());
+
+                                                log.info(
+                                                        "Client created from accepted bid: " +
+                                                                "{} → {}",
+                                                        lead.getCompanyName(),
+                                                        savedClient.getCompanyCode()
+                                                );
+                                            });
+                                }
+
                                 inquiryRepository.save(inquiry);
                             });
                 }
 
-                // Save bid first so project can reference it
-                bidRepository.save(bid);
-
-                /*
-                 * Auto-create project from accepted bid.
-                 * Project number: J-TWC-2026-001
-                 */
                 projectService.createFromBid(bid.getId(), adminId);
 
-                log.info("Bid ACCEPTED: {} → Project created",
-                        bid.getBidNumber());
+                log.info(
+                        "Bid ACCEPTED: {} → Project created",
+                        bid.getBidNumber()
+                );
 
-                // Return early — bid already saved above
                 return mapToAdminResponse(
                         bidRepository.findByIdAndIsDeletedFalse(bid.getId())
                                 .orElse(bid)
@@ -512,9 +660,11 @@ public class BidService {
 
     private String generateBidNumber() {
         int year = Year.now().getValue();
-        long count = bidRepository.countByIsDeletedFalse();
-        return "BID-" + year + "-"
-                + String.format("%03d", count + 1);
+        Integer sequence = sequenceService.nextSequence(
+                SequenceType.BID,
+                year
+        );
+        return String.format("TWC-BID-%d-%03d", year, sequence);
     }
 
     private String toJson(Object value) {
@@ -531,15 +681,25 @@ public class BidService {
     }
 
     private BidResponseForPm mapToPmResponse(Bid bid) {
-        String clientName = clientRepository
-                .findByIdAndIsDeletedFalse(bid.getClientId())
-                .map(Client::getCompanyName)
-                .orElse(null);
 
-        String clientCode = clientRepository
-                .findByIdAndIsDeletedFalse(bid.getClientId())
-                .map(Client::getCompanyCode)
-                .orElse(null);
+        /*
+         * Resolve company name:
+         * 1. If clientId exists → load from client table
+         * 2. If no clientId but has inquiryId → load from
+         *    inquiry → lead → company name
+         * 3. Fallback → null
+         */
+        String companyName = resolveCompanyName(bid);
+        String companyCode = null;
+
+        if (bid.getClientId() != null) {
+            var client = clientRepository
+                    .findByIdAndIsDeletedFalse(bid.getClientId())
+                    .orElse(null);
+            if (client != null) {
+                companyCode = client.getCompanyCode();
+            }
+        }
 
         String contactName = null;
         if (bid.getClientContactId() != null) {
@@ -566,8 +726,8 @@ public class BidService {
                 .inquiryId(bid.getInquiryId())
                 .inquiryNumber(inquiryNumber)
                 .clientId(bid.getClientId())
-                .clientName(clientName)
-                .clientCode(clientCode)
+                .companyName(companyName)
+                .clientCode(companyCode)
                 .clientContactId(bid.getClientContactId())
                 .clientContactName(contactName)
                 .projectName(bid.getProjectName())
@@ -591,7 +751,47 @@ public class BidService {
                 .build();
     }
 
+    /*
+     * Resolves the company name regardless of whether
+     * a client record exists yet.
+     */
+    private String resolveCompanyName(Bid bid) {
+
+        /*
+         * Case 1: Client record exists → use it.
+         */
+        if (bid.getClientId() != null) {
+            return clientRepository
+                    .findByIdAndIsDeletedFalse(bid.getClientId())
+                    .map(Client::getCompanyName)
+                    .orElse(null);
+        }
+
+        /*
+         * Case 2: No client yet but has inquiry → check lead.
+         */
+        if (bid.getInquiryId() != null) {
+            return inquiryRepository
+                    .findByIdAndIsDeletedFalse(bid.getInquiryId())
+                    .flatMap(inquiry -> {
+                        if (inquiry.getLeadId() != null) {
+                            return leadRepository
+                                    .findByIdAndIsDeletedFalse(
+                                            inquiry.getLeadId()
+                                    )
+                                    .map(Lead::getCompanyName);
+                        }
+                        return java.util.Optional.empty();
+                    })
+                    .orElse(null);
+        }
+
+        return null;
+    }
+
     private BidResponseForAdmin mapToAdminResponse(Bid bid) {
+
+        String companyName = resolveCompanyName(bid);
         var client = clientRepository
                 .findByIdAndIsDeletedFalse(bid.getClientId())
                 .orElse(null);
@@ -632,6 +832,7 @@ public class BidService {
                 .inquiryId(bid.getInquiryId())
                 .inquiryNumber(inquiryNumber)
                 .clientId(bid.getClientId())
+                .companyName(companyName)
                 .clientName(client != null
                         ? client.getCompanyName() : null)
                 .clientCode(client != null
@@ -668,5 +869,14 @@ public class BidService {
                 .createdAt(bid.getCreatedAt())
                 .createdBy(bid.getCreatedBy())
                 .build();
+    }
+
+    private String generateClientCode() {
+        int year = Year.now().getValue();
+        Integer sequence = sequenceService.nextSequence(
+                SequenceType.CLIENT,
+                year
+        );
+        return String.format("TWC-CLI-%d-%03d", year, sequence);
     }
 }

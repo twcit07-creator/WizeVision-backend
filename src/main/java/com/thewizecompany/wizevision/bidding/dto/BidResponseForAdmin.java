@@ -65,4 +65,6 @@ public class BidResponseForAdmin {
     private final UUID convertedProjectId;
     private final Instant createdAt;
     private final String createdBy;
+
+    private final String companyName;
 }

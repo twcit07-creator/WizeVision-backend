@@ -1,6 +1,8 @@
 package com.thewizecompany.wizevision.marketing.dto;
 
 import com.thewizecompany.wizevision.marketing.domain.LeadSource;
+import jakarta.persistence.EnumType;
+import jakarta.persistence.Enumerated;
 import jakarta.validation.constraints.Email;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
@@ -32,6 +34,7 @@ public class CreateLeadRequest {
     private String contactDesignation;
 
     @NotNull(message = "Lead source is required")
+    @Enumerated(EnumType.STRING)
     private LeadSource source;
 
     private String notes;

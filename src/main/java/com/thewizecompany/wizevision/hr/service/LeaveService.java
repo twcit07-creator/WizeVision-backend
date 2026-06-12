@@ -1,5 +1,6 @@
 package com.thewizecompany.wizevision.hr.service;
 
+import com.thewizecompany.wizevision.employee.domain.Employee;
 import com.thewizecompany.wizevision.employee.domain.Role;
 import com.thewizecompany.wizevision.employee.repository.EmployeeRepository;
 import com.thewizecompany.wizevision.hr.domain.LeaveApplication;
@@ -649,11 +650,7 @@ public class LeaveService {
          * For now we use reportingManagerId directly.
          */
         return employeeRepository
-                .findByIdAndIsDeletedFalse(employeeId)
-                .map(e -> e.getReportingManager() != null
-                        ? e.getReportingManager().getId()
-                        : null)
-                .orElse(null);
+                .findByIdAndIsDeletedFalse(employeeId).filter(e -> e.getReportingManager() != null).map(e -> e.getReportingManager().getId()).orElse(null);
     }
 
     private UUID findProjectManager(UUID employeeId) {
@@ -687,19 +684,16 @@ public class LeaveService {
 
         String employeeName = employeeRepository
                 .findByIdAndIsDeletedFalse(app.getEmployeeId())
-                .map(e -> e.getFullName())
+                .map(Employee::getFullName)
                 .orElse(null);
 
         String employeeCode = employeeRepository
                 .findByIdAndIsDeletedFalse(app.getEmployeeId())
-                .map(e -> e.getEmployeeCode())
+                .map(Employee::getEmployeeCode)
                 .orElse(null);
 
         String department = employeeRepository
-                .findByIdAndIsDeletedFalse(app.getEmployeeId())
-                .map(e -> e.getDepartment() != null
-                        ? e.getDepartment().getName() : null)
-                .orElse(null);
+                .findByIdAndIsDeletedFalse(app.getEmployeeId()).filter(e -> e.getDepartment() != null).map(e -> e.getDepartment().getName()).orElse(null);
 
         var leaveType = leaveTypeRepository
                 .findByIdAndIsDeletedFalse(app.getLeaveTypeId())
@@ -708,21 +702,21 @@ public class LeaveService {
         String tlName = app.getTlId() != null
                 ? employeeRepository
                   .findByIdAndIsDeletedFalse(app.getTlId())
-                  .map(e -> e.getFullName())
+                  .map(Employee::getFullName)
                   .orElse(null)
                 : null;
 
         String pmName = app.getPmId() != null
                 ? employeeRepository
                   .findByIdAndIsDeletedFalse(app.getPmId())
-                  .map(e -> e.getFullName())
+                  .map(Employee::getFullName)
                   .orElse(null)
                 : null;
 
         String hrName = app.getHrId() != null
                 ? employeeRepository
                   .findByIdAndIsDeletedFalse(app.getHrId())
-                  .map(e -> e.getFullName())
+                  .map(Employee::getFullName)
                   .orElse(null)
                 : null;
 

@@ -78,4 +78,6 @@ public interface BidRepository
     long countByStatusAndIsDeletedFalse(BidStatus status);
 
     long countByIsDeletedFalse();
+
+    long countByClientIdAndIsDeletedFalse(UUID id);
 }

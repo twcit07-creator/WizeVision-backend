@@ -36,8 +36,8 @@ public class EmployeeResponse {
     private final String email;
     private final String phone;
     private final Role role;
-    private final Department department;
-    private final Designation designation;
+    private final String department;
+    private final String designation;
     private final LocalDate joiningDate;
     private final String profilePhotoUrl;
     private final boolean isActive;

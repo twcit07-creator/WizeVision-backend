@@ -137,8 +137,7 @@ public class BidController {
                                 search, status,
                                 resolveEmployeeId(email),
                                 PageRequest.of(
-                                        page, size,
-                                        Sort.by("createdAt").descending()
+                                        page, size
                                 )
                         )
                 )
@@ -287,8 +286,7 @@ public class BidController {
                         bidService.searchBidsForAdmin(
                                 search, status, clientId,
                                 PageRequest.of(
-                                        page, size,
-                                        Sort.by("createdAt").descending()
+                                        page, size
                                 )
                         )
                 )

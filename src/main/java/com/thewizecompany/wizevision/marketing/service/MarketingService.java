@@ -21,9 +21,11 @@ import com.thewizecompany.wizevision.marketing.dto.LeadResponse;
 import com.thewizecompany.wizevision.marketing.dto.UpdateLeadRequest;
 import com.thewizecompany.wizevision.marketing.repository.LeadRepository;
 import com.thewizecompany.wizevision.marketing.repository.ProjectInquiryRepository;
+import com.thewizecompany.wizevision.shared.domain.SequenceType;
 import com.thewizecompany.wizevision.shared.exception.BusinessException;
 import com.thewizecompany.wizevision.shared.exception.ResourceNotFoundException;
 import com.thewizecompany.wizevision.shared.responses.PageResponse;
+import com.thewizecompany.wizevision.shared.service.SequenceService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.domain.Page;
@@ -47,6 +49,7 @@ public class MarketingService {
     private final ClientRepository clientRepository;
     private final ClientContactRepository contactRepository;
     private final ObjectMapper objectMapper;
+    private final SequenceService sequenceService;
 
     // ─────────────────────────────────────────────────────────
     // LEAD OPERATIONS
@@ -175,153 +178,302 @@ public class MarketingService {
      * The ProjectInquiry is then forwarded to PM
      * via a separate forwardInquiry() call.
      */
+//    @Transactional
+//    public InquiryResponse convertLead(
+//            UUID leadId,
+//            ConvertLeadRequest request) {
+//
+//        Lead lead = findLead(leadId);
+//
+//        if (lead.getStatus() == LeadStatus.CONVERTED) {
+//            throw new BusinessException(
+//                    "Lead is already converted",
+//                    "LEAD_ALREADY_CONVERTED"
+//            );
+//        }
+//
+//        if (lead.getStatus() == LeadStatus.LOST) {
+//            throw new BusinessException(
+//                    "Cannot convert a lost lead",
+//                    "LEAD_IS_LOST"
+//            );
+//        }
+//
+//        /*
+//         * Resolve client — use existing or create new.
+//         */
+//        UUID clientId;
+//
+//        if (request.getExistingClientId() != null) {
+//            clientRepository
+//                    .findByIdAndIsDeletedFalse(
+//                            request.getExistingClientId()
+//                    )
+//                    .orElseThrow(() ->
+//                            new ResourceNotFoundException(
+//                                    "Client",
+//                                    request.getExistingClientId().toString()
+//                            )
+//                    );
+//            clientId = request.getExistingClientId();
+//        } else {
+//            /*
+//             * Create new client from lead data.
+//             * Company name comes from the lead.
+//             */
+//            Client newClient = Client.builder()
+//                    .companyCode(generateClientCode())
+//                    .companyName(lead.getCompanyName())
+//                    .email(lead.getContactEmail())
+//                    .phone(lead.getContactPhone())
+//                    .city(lead.getCity())
+//                    .state(lead.getState())
+//                    .country(lead.getCountry())
+//                    .industryType(lead.getIndustryType())
+//                    .isActive(true)
+//                    .build();
+//
+//            Client savedClient = clientRepository.save(newClient);
+//            clientId = savedClient.getId();
+//
+//            log.info(
+//                    "New client created from lead: {}",
+//                    savedClient.getCompanyCode()
+//            );
+//        }
+//
+//        /*
+//         * Create the project inquiry.
+//         */
+//        CreateInquiryRequest inquiryReq = request.getInquiry();
+//        String inquiryNumber = generateInquiryNumber();
+//
+//        String documentRefsJson = null;
+//        if (inquiryReq.getDocumentReferences() != null
+//                && !inquiryReq.getDocumentReferences().isEmpty()) {
+//            try {
+//                documentRefsJson = objectMapper.writeValueAsString(
+//                        inquiryReq.getDocumentReferences()
+//                );
+//            } catch (JsonProcessingException e) {
+//                log.warn(
+//                        "Could not serialize document references: {}",
+//                        e.getMessage()
+//                );
+//            }
+//        }
+//
+//        ProjectInquiry inquiry = ProjectInquiry.builder()
+//                .inquiryNumber(inquiryNumber)
+//                .leadId(leadId)
+//                .clientId(clientId)
+//                .clientContactId(inquiryReq.getClientContactId())
+//                .projectName(inquiryReq.getProjectName().trim())
+//                .projectLocation(inquiryReq.getProjectLocation())
+//                .description(inquiryReq.getDescription())
+//                .documentReferences(documentRefsJson)
+//                .status(InquiryStatus.NEW)
+//                .notes(inquiryReq.getNotes())
+//                .build();
+//
+//        ProjectInquiry savedInquiry =
+//                inquiryRepository.save(inquiry);
+//
+//        /*
+//         * Mark lead as converted.
+//         */
+//        lead.setStatus(LeadStatus.CONVERTED);
+//        lead.setClientId(clientId);
+//        lead.setConvertedAt(Instant.now());
+//        leadRepository.save(lead);
+//
+//        log.info(
+//                "Lead converted: {} → Inquiry: {}",
+//                lead.getLeadNumber(),
+//                savedInquiry.getInquiryNumber()
+//        );
+//
+//        return mapInquiryToResponse(savedInquiry);
+//    }
+//
+//    // ─────────────────────────────────────────────────────────
+//    // INQUIRY OPERATIONS
+//    // ─────────────────────────────────────────────────────────
+//
+//    /*
+//     * Create a direct inquiry (not from a lead).
+//     * Used when an existing client calls directly
+//     * with a new project — no lead pipeline needed.
+//     */
+//    @Transactional
+//    public InquiryResponse createDirectInquiry(
+//            CreateInquiryRequest request) {
+//
+//        if (request.getClientId() == null) {
+//            throw new BusinessException(
+//                    "Client ID is required for direct inquiry",
+//                    "CLIENT_REQUIRED"
+//            );
+//        }
+//
+//        clientRepository
+//                .findByIdAndIsDeletedFalse(request.getClientId())
+//                .orElseThrow(() ->
+//                        new ResourceNotFoundException(
+//                                "Client",
+//                                request.getClientId().toString()
+//                        )
+//                );
+//
+//        String documentRefsJson = null;
+//        if (request.getDocumentReferences() != null
+//                && !request.getDocumentReferences().isEmpty()) {
+//            try {
+//                documentRefsJson = objectMapper.writeValueAsString(
+//                        request.getDocumentReferences()
+//                );
+//            } catch (JsonProcessingException e) {
+//                log.warn(
+//                        "Could not serialize document references: {}",
+//                        e.getMessage()
+//                );
+//            }
+//        }
+//
+//        ProjectInquiry inquiry = ProjectInquiry.builder()
+//                .inquiryNumber(generateInquiryNumber())
+//                .clientId(request.getClientId())
+//                .clientContactId(request.getClientContactId())
+//                .projectName(request.getProjectName().trim())
+//                .projectLocation(request.getProjectLocation())
+//                .description(request.getDescription())
+//                .documentReferences(documentRefsJson)
+//                .status(InquiryStatus.NEW)
+//                .notes(request.getNotes())
+//                .build();
+//
+//        ProjectInquiry saved = inquiryRepository.save(inquiry);
+//
+//        log.info(
+//                "Direct inquiry created: {}",
+//                saved.getInquiryNumber()
+//        );
+//
+//        return mapInquiryToResponse(saved);
+//    }
+
+    /*
+     * UNIFIED INQUIRY CREATION
+     *
+     * Handles both paths:
+     *   A) From a lead  → leadId provided, clientId null
+     *   B) Direct       → clientId provided, leadId null
+     *
+     * Validation:
+     *   At least one of leadId or clientId must be provided.
+     *   Both cannot be null.
+     *   Both cannot be provided simultaneously
+     *   (use convertLead for that case).
+     */
     @Transactional
-    public InquiryResponse convertLead(
-            UUID leadId,
-            ConvertLeadRequest request) {
-
-        Lead lead = findLead(leadId);
-
-        if (lead.getStatus() == LeadStatus.CONVERTED) {
-            throw new BusinessException(
-                    "Lead is already converted",
-                    "LEAD_ALREADY_CONVERTED"
-            );
-        }
-
-        if (lead.getStatus() == LeadStatus.LOST) {
-            throw new BusinessException(
-                    "Cannot convert a lost lead",
-                    "LEAD_IS_LOST"
-            );
-        }
+    public InquiryResponse createInquiry(
+            CreateInquiryRequest request,
+            UUID createdById) {
 
         /*
-         * Resolve client — use existing or create new.
+         * VALIDATION: must have leadId OR clientId, not neither.
          */
-        UUID clientId;
+        if (request.getLeadId() == null
+                && request.getClientId() == null) {
+            throw new BusinessException(
+                    "An inquiry must be linked to either " +
+                            "a lead or an existing client. " +
+                            "Please provide leadId or clientId.",
+                    "INQUIRY_SOURCE_REQUIRED"
+            );
+        }
 
-        if (request.getExistingClientId() != null) {
+        if (request.getLeadId() != null
+                && request.getClientId() != null) {
+            throw new BusinessException(
+                    "An inquiry cannot be linked to both " +
+                            "a lead and a client simultaneously. " +
+                            "Provide only one.",
+                    "INQUIRY_AMBIGUOUS_SOURCE"
+            );
+        }
+
+        UUID resolvedClientId = null;
+        UUID resolvedLeadId = null;
+
+        // ── PATH A: FROM A LEAD ───────────────────────────────
+        if (request.getLeadId() != null) {
+
+            Lead lead = leadRepository
+                    .findByIdAndIsDeletedFalse(request.getLeadId())
+                    .orElseThrow(() ->
+                            new ResourceNotFoundException(
+                                    "Lead", request.getLeadId().toString()
+                            )
+                    );
+
+            /*
+             * Validate lead is in a convertible state.
+             * Cannot convert a lost lead.
+             * Can convert NEW, CONTACTED, or QUALIFIED leads.
+             */
+            if (lead.getStatus() == LeadStatus.LOST) {
+                throw new BusinessException(
+                        "Cannot create an inquiry from a lost lead. " +
+                                "Reopen the lead first if appropriate.",
+                        "LEAD_IS_LOST"
+                );
+            }
+
+            if (lead.getStatus() == LeadStatus.CONVERTED) {
+                throw new BusinessException(
+                        "This lead has already been converted. " +
+                                "A project inquiry already exists for it.",
+                        "LEAD_ALREADY_CONVERTED"
+                );
+            }
+
+            resolvedLeadId = lead.getId();
+
+            /*
+             * Mark lead as CONVERTED.
+             * No client is created yet — that happens
+             * only when the bid is accepted.
+             */
+            lead.setStatus(LeadStatus.CONVERTED);
+            lead.setConvertedAt(Instant.now());
+            leadRepository.save(lead);
+
+            log.info(
+                    "Lead converted to inquiry: {} — {}",
+                    lead.getLeadNumber(),
+                    lead.getCompanyName()
+            );
+        }
+
+        // ── PATH B: DIRECT FROM EXISTING CLIENT ──────────────
+        if (request.getClientId() != null) {
+
             clientRepository
-                    .findByIdAndIsDeletedFalse(
-                            request.getExistingClientId()
-                    )
+                    .findByIdAndIsDeletedFalse(request.getClientId())
                     .orElseThrow(() ->
                             new ResourceNotFoundException(
                                     "Client",
-                                    request.getExistingClientId().toString()
+                                    request.getClientId().toString()
                             )
                     );
-            clientId = request.getExistingClientId();
-        } else {
-            /*
-             * Create new client from lead data.
-             * Company name comes from the lead.
-             */
-            Client newClient = Client.builder()
-                    .companyCode(generateClientCode())
-                    .companyName(lead.getCompanyName())
-                    .email(lead.getContactEmail())
-                    .phone(lead.getContactPhone())
-                    .city(lead.getCity())
-                    .state(lead.getState())
-                    .country(lead.getCountry())
-                    .industryType(lead.getIndustryType())
-                    .isActive(true)
-                    .build();
 
-            Client savedClient = clientRepository.save(newClient);
-            clientId = savedClient.getId();
-
-            log.info(
-                    "New client created from lead: {}",
-                    savedClient.getCompanyCode()
-            );
+            resolvedClientId = request.getClientId();
         }
 
         /*
-         * Create the project inquiry.
+         * Build document references JSON.
          */
-        CreateInquiryRequest inquiryReq = request.getInquiry();
-        String inquiryNumber = generateInquiryNumber();
-
-        String documentRefsJson = null;
-        if (inquiryReq.getDocumentReferences() != null
-                && !inquiryReq.getDocumentReferences().isEmpty()) {
-            try {
-                documentRefsJson = objectMapper.writeValueAsString(
-                        inquiryReq.getDocumentReferences()
-                );
-            } catch (JsonProcessingException e) {
-                log.warn(
-                        "Could not serialize document references: {}",
-                        e.getMessage()
-                );
-            }
-        }
-
-        ProjectInquiry inquiry = ProjectInquiry.builder()
-                .inquiryNumber(inquiryNumber)
-                .leadId(leadId)
-                .clientId(clientId)
-                .clientContactId(inquiryReq.getClientContactId())
-                .projectName(inquiryReq.getProjectName().trim())
-                .projectLocation(inquiryReq.getProjectLocation())
-                .description(inquiryReq.getDescription())
-                .documentReferences(documentRefsJson)
-                .status(InquiryStatus.NEW)
-                .notes(inquiryReq.getNotes())
-                .build();
-
-        ProjectInquiry savedInquiry =
-                inquiryRepository.save(inquiry);
-
-        /*
-         * Mark lead as converted.
-         */
-        lead.setStatus(LeadStatus.CONVERTED);
-        lead.setClientId(clientId);
-        lead.setConvertedAt(Instant.now());
-        leadRepository.save(lead);
-
-        log.info(
-                "Lead converted: {} → Inquiry: {}",
-                lead.getLeadNumber(),
-                savedInquiry.getInquiryNumber()
-        );
-
-        return mapInquiryToResponse(savedInquiry);
-    }
-
-    // ─────────────────────────────────────────────────────────
-    // INQUIRY OPERATIONS
-    // ─────────────────────────────────────────────────────────
-
-    /*
-     * Create a direct inquiry (not from a lead).
-     * Used when an existing client calls directly
-     * with a new project — no lead pipeline needed.
-     */
-    @Transactional
-    public InquiryResponse createDirectInquiry(
-            CreateInquiryRequest request) {
-
-        if (request.getClientId() == null) {
-            throw new BusinessException(
-                    "Client ID is required for direct inquiry",
-                    "CLIENT_REQUIRED"
-            );
-        }
-
-        clientRepository
-                .findByIdAndIsDeletedFalse(request.getClientId())
-                .orElseThrow(() ->
-                        new ResourceNotFoundException(
-                                "Client",
-                                request.getClientId().toString()
-                        )
-                );
-
         String documentRefsJson = null;
         if (request.getDocumentReferences() != null
                 && !request.getDocumentReferences().isEmpty()) {
@@ -337,9 +489,12 @@ public class MarketingService {
             }
         }
 
+        String inquiryNumber = generateInquiryNumber();
+
         ProjectInquiry inquiry = ProjectInquiry.builder()
-                .inquiryNumber(generateInquiryNumber())
-                .clientId(request.getClientId())
+                .inquiryNumber(inquiryNumber)
+                .leadId(resolvedLeadId)
+                .clientId(resolvedClientId)
                 .clientContactId(request.getClientContactId())
                 .projectName(request.getProjectName().trim())
                 .projectLocation(request.getProjectLocation())
@@ -352,8 +507,10 @@ public class MarketingService {
         ProjectInquiry saved = inquiryRepository.save(inquiry);
 
         log.info(
-                "Direct inquiry created: {}",
-                saved.getInquiryNumber()
+                "Inquiry created: {} — {} (source: {})",
+                saved.getInquiryNumber(),
+                saved.getProjectName(),
+                resolvedLeadId != null ? "lead" : "direct client"
         );
 
         return mapInquiryToResponse(saved);
@@ -494,16 +651,20 @@ public class MarketingService {
 
     private String generateLeadNumber() {
         int year = Year.now().getValue();
-        long count = leadRepository.countByIsDeletedFalse();
-        return "LEAD-" + year + "-"
-                + String.format("%03d", count + 1);
+        Integer sequence = sequenceService.nextSequence(
+                SequenceType.LEAD,
+                year
+        );
+        return String.format("TWC-LEAD-%d-%03d", year, sequence);
     }
 
     private String generateInquiryNumber() {
         int year = Year.now().getValue();
-        long count = inquiryRepository.countByIsDeletedFalse();
-        return "INQ-" + year + "-"
-                + String.format("%03d", count + 1);
+        Integer sequence = sequenceService.nextSequence(
+                SequenceType.INQUIRY,
+                year
+        );
+        return String.format("TWC-INQ-%d-%03d", year, sequence);
     }
 
     private String generateClientCode() {

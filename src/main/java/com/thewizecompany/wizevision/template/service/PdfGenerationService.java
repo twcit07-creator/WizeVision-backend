@@ -1,12 +1,16 @@
 package com.thewizecompany.wizevision.template.service;
 
+import com.thewizecompany.wizevision.client.domain.Client;
 import com.thewizecompany.wizevision.hr.repository.PayslipRepository;
+import com.thewizecompany.wizevision.invoicing.domain.Invoice;
+import com.thewizecompany.wizevision.invoicing.domain.InvoiceTargetType;
 import com.thewizecompany.wizevision.invoicing.repository.InvoiceRepository;
 import com.thewizecompany.wizevision.invoicing.repository.PaymentRepository;
 import com.thewizecompany.wizevision.bidding.repository.BidRepository;
 import com.thewizecompany.wizevision.client.repository.ClientContactRepository;
 import com.thewizecompany.wizevision.client.repository.ClientRepository;
 import com.thewizecompany.wizevision.employee.repository.EmployeeRepository;
+import com.thewizecompany.wizevision.projects.repository.ChangeOrderRepository;
 import com.thewizecompany.wizevision.projects.repository.ProjectRepository;
 import com.thewizecompany.wizevision.shared.exception.BusinessException;
 import com.thewizecompany.wizevision.shared.exception.ResourceNotFoundException;
@@ -17,11 +21,14 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.thymeleaf.context.Context;
 import org.thymeleaf.spring6.SpringTemplateEngine;
-import org.xhtmlrenderer.pdf.ITextRenderer;
-
+import com.openhtmltopdf.pdfboxout.PdfRendererBuilder;
+import org.springframework.core.io.ClassPathResource;
 import java.io.ByteArrayOutputStream;
+import java.io.IOException;
+import java.util.Base64;
+import java.math.BigDecimal;
 import java.time.format.DateTimeFormatter;
-import java.util.UUID;
+import java.util.*;
 
 /*
  * PDF GENERATION SERVICE
@@ -54,9 +61,10 @@ public class PdfGenerationService {
     private final ClientContactRepository contactRepository;
     private final EmployeeRepository employeeRepository;
     private final SpringTemplateEngine templateEngine;
+    private final ChangeOrderRepository changeOrderRepository;
 
     private static final DateTimeFormatter DATE_FORMAT =
-            DateTimeFormatter.ofPattern("dd MMM yyyy");
+            DateTimeFormatter.ofPattern("MMM dd, yyyy");
 
     // ─────────────────────────────────────────────────────────
     // INVOICE PDF
@@ -90,6 +98,7 @@ public class PdfGenerationService {
         /*
          * Invoice fields.
          */
+        ctx.setVariable("companyLogo", loadLogoAsBase64());
         ctx.setVariable("invoiceNumber",
                 invoice.getInvoiceNumber());
         ctx.setVariable("invoiceDate",
@@ -98,6 +107,7 @@ public class PdfGenerationService {
                 invoice.getDueDate() != null
                         ? invoice.getDueDate().format(DATE_FORMAT)
                         : "N/A");
+        ctx.setVariable("targetType", invoice.getTargetType().name());
         ctx.setVariable("status",
                 invoice.getStatus().getDisplayName());
         ctx.setVariable("subtotal",
@@ -117,6 +127,13 @@ public class PdfGenerationService {
                 invoice.getTermsAndConditions());
         ctx.setVariable("lineItems",
                 invoice.getLineItems());
+        ctx.setVariable("paymentStatus",
+                invoice.getOutstandingAmount().compareTo(BigDecimal.ZERO)
+                        == 0 ? "Full & Final" : "Partial");
+        ctx.setVariable("billingPercentage",
+                invoice.getBillingPercentage());
+        ctx.setVariable("discount", "0");
+        ctx.setVariable("shipping", "0");
 
         /*
          * Client fields.
@@ -134,25 +151,18 @@ public class PdfGenerationService {
                         ? client.getGstNumber() : "");
         ctx.setVariable("clientAddress",
                 buildAddress(client));
+        ctx.setVariable("clientEmail", client != null ? client.getEmail() : "");
 
         /*
-         * Contact fields.
+        * Change Order Fields
          */
-        if (invoice.getClientContactId() != null) {
-            var contact = contactRepository
-                    .findByIdAndIsDeletedFalse(
-                            invoice.getClientContactId()
-                    )
-                    .orElse(null);
-            ctx.setVariable("contactName",
-                    contact != null ? contact.getFullName() : "");
-            ctx.setVariable("contactEmail",
-                    contact != null
-                            ? contact.getEmail() : "");
-            ctx.setVariable("contactPhone",
-                    contact != null
-                            ? contact.getPhone() : "");
-        }
+        var changeOrder = changeOrderRepository.findByIdAndIsDeletedFalse(
+                invoice.getChangeOrderId()
+        ).orElse(null);
+        ctx.setVariable("changeOrderNumber",
+                changeOrder != null ? changeOrder.getChangeOrderNumber() : "");
+        ctx.setVariable("changeOrderAmount",
+                changeOrder!=null ? changeOrder.getAmount() : "");
 
         /*
          * Project fields.
@@ -166,6 +176,27 @@ public class PdfGenerationService {
                 project != null ? project.getProjectNumber() : "");
         ctx.setVariable("projectName",
                 project != null ? project.getProjectName() : "");
+        ctx.setVariable("contractAmount",
+                project != null ? project.getContractAmount() : "");
+        ctx.setVariable("remainingToInvoice", project != null ? project.getOutstandingAmount() : "");
+
+        //Previous Invoices List
+        List<Invoice> previousInvoices = null;
+        BigDecimal previousTotal = BigDecimal.ZERO;
+        if(project != null){
+            previousInvoices = invoiceRepository.findByProjectIdAndIsDeletedFalse(project.getId());
+            previousInvoices.remove(invoice);
+            previousInvoices = previousInvoices.stream()
+                    .filter(i -> Objects.equals(i.getTargetType(), invoice.getTargetType())).toList();
+            previousTotal = previousInvoices.stream()
+                    .map(Invoice::getTotalAmount)
+                    .filter(Objects::nonNull)
+                    .reduce(BigDecimal.ZERO, BigDecimal::add);
+        }
+        ctx.setVariable("previousInvoices", previousInvoices != null ? previousInvoices : Collections.emptyList());
+        ctx.setVariable("previousTotal", previousTotal);
+
+
 
         /*
          * Payments.
@@ -179,12 +210,12 @@ public class PdfGenerationService {
         /*
          * Company info (WizeVision).
          */
-        ctx.setVariable("companyName", "The WizeVision Company");
+        ctx.setVariable("companyName", "The Wize Company");
         ctx.setVariable("companyAddress",
-                "Your Office Address, City, State - Pincode");
+                "House No-54, Lane No. 4, Indraprasth Colony, Dehradun, Uttarakhand - 248001, IN");
         ctx.setVariable("companyGst", "Your GST Number");
         ctx.setVariable("companyEmail",
-                "billing@wizevision.com");
+                "info@thewizecompany.com");
         ctx.setVariable("companyPhone", "+91 XXXXXXXXXX");
 
         return renderToPdf(
@@ -385,25 +416,29 @@ public class PdfGenerationService {
         try {
             /*
              * STEP 1: Render HTML using Thymeleaf.
-             * Template content is processed as a string,
-             * not loaded from a file.
-             * Thymeleaf replaces ${variable} expressions
-             * with actual values from the context.
+             * Replaces ${variable} expressions with real values.
              */
             String renderedHtml = templateEngine
                     .process(templateContent, context);
 
             /*
              * STEP 2: Convert rendered HTML to PDF
-             * using Flying Saucer (XHTML renderer).
+             * using OpenHTMLToPDF.
              */
             try (ByteArrayOutputStream outputStream =
                          new ByteArrayOutputStream()) {
 
-                ITextRenderer renderer = new ITextRenderer();
-                renderer.setDocumentFromString(renderedHtml);
-                renderer.layout();
-                renderer.createPDF(outputStream);
+                PdfRendererBuilder builder =
+                        new PdfRendererBuilder();
+
+                builder.useFastMode();
+                builder.withHtmlContent(
+                        renderedHtml,
+                        null   // base URI — null is fine for
+                        // inline CSS templates
+                );
+                builder.toStream(outputStream);
+                builder.run();
 
                 return outputStream.toByteArray();
             }
@@ -421,8 +456,7 @@ public class PdfGenerationService {
     }
 
     private String buildAddress(
-            com.thewizecompany.wizevision
-                    .client.domain.Client client) {
+            Client client) {
 
         if (client == null) return "";
 
@@ -435,9 +469,33 @@ public class PdfGenerationService {
             sb.append(", ").append(client.getCity());
         if (client.getState() != null)
             sb.append(", ").append(client.getState());
+        if (client.getCountry() != null)
+            sb.append(", ").append(client.getCountry());
         if (client.getPincode() != null)
             sb.append(" - ").append(client.getPincode());
 
         return sb.toString();
+    }
+
+    private String loadLogoAsBase64() {
+
+        try {
+            ClassPathResource resource =
+                    new ClassPathResource("static/LOGO_01.png");
+
+            if (!resource.exists()) {
+                log.error("Company logo not found");
+                return "";
+            }
+
+            byte[] imageBytes = resource.getInputStream().readAllBytes();
+
+            return Base64.getEncoder()
+                    .encodeToString(imageBytes);
+
+        } catch (IOException e) {
+            log.error("Failed to load company logo", e);
+            return "";
+        }
     }
 }

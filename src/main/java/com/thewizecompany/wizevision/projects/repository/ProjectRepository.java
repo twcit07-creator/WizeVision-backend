@@ -105,4 +105,6 @@ public interface ProjectRepository
     long countByStatusAndIsDeletedFalse(ProjectStatus status);
 
     long countByIsDeletedFalse();
+
+    long countByClientIdAndIsDeletedFalse(UUID id);
 }

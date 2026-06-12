@@ -29,7 +29,10 @@ public class CreateBidRequest {
      */
     private UUID inquiryId;
 
-    @NotNull(message = "Client is required")
+    /*
+     * Optional when inquiryId is provided.
+     * Required when no inquiryId (direct bid).
+     */
     private UUID clientId;
 
     private UUID clientContactId;
